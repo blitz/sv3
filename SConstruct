@@ -27,7 +27,7 @@ if int(ARGUMENTS.get('force32', 0)):
 
 conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag })
 
-if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
+if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++1x'):
     print("Your compiler is too old.")
     Exit(1)
 
