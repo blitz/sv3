@@ -5,7 +5,7 @@
 def AddOptionalFlag(context, extension, key, flag):
     context.Message('Check if compiler supports "%s"... ' % flag)
     old_var = context.env[key];
-    context.env[key] += [flag]
+    context.env[key] =  context.env[key] + [flag]
     result = context.TryCompile('', extension)
     context.Result(result)
     if not result:
@@ -27,7 +27,7 @@ if int(ARGUMENTS.get('force32', 0)):
 
 conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag })
 
-if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++1x'):
+if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
     print("Your compiler is too old.")
     Exit(1)
 
