@@ -1,3 +1,4 @@
 *.o
 *~
-.scons*
+.sc*
+/config.log

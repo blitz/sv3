@@ -77,7 +77,7 @@ namespace OnesComplement {
       buf  += sizeof(unsigned long)*4;
       size -= sizeof(unsigned long)*4;
     }
-    rstate = !odd ? rstate : Endian::bswap(rstate);
+    rstate = !odd ? rstate : Endian::bswapl(rstate);
 
     return checksum_rest(rstate, buf, size, odd);
   }
@@ -112,7 +112,7 @@ namespace OnesComplement {
       dst  += sizeof(unsigned long)*4;
       size -= sizeof(unsigned long)*4;
     }
-    rstate = !odd ? rstate : Endian::bswap(rstate);
+    rstate = !odd ? rstate : Endian::bswapl(rstate);
 
     return checksum_move_rest(rstate, src, dst, size, odd);
   }

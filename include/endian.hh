@@ -11,6 +11,16 @@ namespace Endian {
       | bswap(static_cast<uint32_t>(value >> 32));
   }
 
+  static inline unsigned long bswapl(unsigned long value) {
+    #if    __SIZEOF_LONG__ == 8
+    return bswap(static_cast<uint64_t>(value));
+    #elif  __SIZEOF_LONG__ == 4
+    return bswap(static_cast<uint32_t>(value));
+    #else
+    #error Long?
+    #endif
+  }
+
 }
 
 // EOF
