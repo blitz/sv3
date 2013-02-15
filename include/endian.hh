@@ -21,6 +21,12 @@ namespace Endian {
     #endif
   }
 
+  // For use in headers
+
+  constexpr uint16_t const_hton16(uint16_t v) {
+    return (v >> 8) | (v << 8);
+  }
+
 }
 
 // EOF

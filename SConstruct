@@ -35,7 +35,23 @@ conf.AddOptionalFlag('.c', 'CCFLAGS', '-march=native')
 
 host_env = conf.Finish()
 
+host_pcap_env = host_env.Clone()
+conf = Configure(host_pcap_env)
+if not conf.CheckLibWithHeader('pcap', 'pcap.h', 'c'):
+    print 'Could not find libpcap.'
+    pcap_is_available = False
+else:
+    pcap_is_available = True
+host_pcap_env = conf.Finish()
+
+# Tests
+
 host_env.Program('test/checksums', ['test/checksums.cc'])
 host_env.AddPostAction('test/checksums', Command('$SOURCE', [], 'test/checksums'))
+
+if pcap_is_available:
+    host_pcap_env.Program('test/packets', ['test/packets.cc'])
+else:
+    print("Not building test/packets!")
 
 # EOF

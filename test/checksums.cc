@@ -87,7 +87,7 @@ int main()
         bool odd        = false;
         unsigned long first  = checksum_fun[f](data[i].data, start, odd);
         unsigned long second = checksum_fun[f](data[i].data + start, data[i].length - start, odd);
-        uint16_t checksum = combine(add(first, second));
+        uint16_t checksum = fold(add(first, second));
 
         if (checksum != data[i].checksum) {
           printf("CHECKSUM FAIL [%02u:%02u:%04u] %08lx + %08lx = %04x : %04x\n",
@@ -109,7 +109,7 @@ int main()
 
     bool     odd   = false;
     uint64_t start = rdtsc();
-    uint16_t checksum = combine(checksum_fun[f](buf, buf_len, odd));
+    uint16_t checksum = fold(checksum_fun[f](buf, buf_len, odd));
     uint64_t end   = rdtsc();
 
     printf("f%02u:      checksum %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
@@ -129,7 +129,7 @@ int main()
 
     bool     odd   = false;
     uint64_t start = rdtsc();
-    uint16_t checksum = combine(move_fun[f](buf, dst, buf_len, odd));
+    uint16_t checksum = fold(move_fun[f](buf, dst, buf_len, odd));
     uint64_t end   = rdtsc();
 
     assert(memcmp(dst, buf, buf_len) == 0);
@@ -152,7 +152,7 @@ int main()
 
     bool     odd   = false;
     uint64_t start = rdtsc();
-    uint16_t checksum = combine(checksum_fun[f](buf, buf_len, odd));
+    uint16_t checksum = fold(checksum_fun[f](buf, buf_len, odd));
     memcpy(buf, dst, buf_len);
     uint64_t end   = rdtsc();
 

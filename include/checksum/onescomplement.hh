@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cassert>
+#include <cstring>
 
 #ifdef __SSE2__
 # include <emmintrin.h>
@@ -26,9 +27,9 @@ namespace OnesComplement {
     return a;
   }
 
-  /// Combine checksum state into the final 16-bit word. This is in
-  /// host byte order.
-  static unsigned long combine(unsigned long words)
+  /// Fold checksum state into the final 16-bit word. This is in host
+  /// byte order.
+  static unsigned long fold(unsigned long words)
   {
     uint32_t res = 0;
     for (unsigned word = 0; word < sizeof(words)/2; word++)
@@ -146,7 +147,7 @@ namespace OnesComplement {
     sum = _mm_add_epi32(sum, _mm_srli_si128(sum, 4));
 #endif
     if (odd) {
-      return Endian::bswap16(combine(_mm_cvtsi128_si32(sum)));
+      return Endian::bswap16(fold(_mm_cvtsi128_si32(sum)));
     } else
       return _mm_cvtsi128_si32(sum);
   }
@@ -212,6 +213,20 @@ namespace OnesComplement {
 
     return checksum_move_rest(astate, src, dst, size, odd);
   }
+
+
+  // Our checksum function of choice
+  static inline unsigned long
+  checksum(uint8_t const *buf, size_t size, bool &odd) {
+    return checksum_sse(buf, size, odd);
+  }
+
+  static inline unsigned long
+  checksum(uint8_t const *buf, size_t size) {
+    bool odd = false;
+    return checksum_sse(buf, size, odd);
+  }
+
 }
 
 // EOF
