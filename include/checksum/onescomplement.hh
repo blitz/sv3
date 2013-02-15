@@ -47,6 +47,8 @@ namespace OnesComplement {
     return state;
   }
 
+  /// Computes a one's complement checksum. Data is in network byte
+  /// order. Checksum is in host byte order.
   static inline unsigned long
   checksum_adc(uint8_t const *buf, size_t size, bool &odd)
   {
@@ -108,6 +110,8 @@ namespace OnesComplement {
   }
 #endif
 
+  /// Computes a one's complement checksum using SSE. Data is in
+  /// network byte order. Checksum is in host byte order.
   static inline unsigned long
   checksum_sse(uint8_t const *buf, size_t size, bool &odd)
   {
