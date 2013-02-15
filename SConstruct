@@ -7,5 +7,6 @@ host_env = Environment(#CXX = "clang++",
 
 
 host_env.Program('test/checksums', ['test/checksums.cc'])
+host_env.AddPostAction('test/checksums', Command('$SOURCE', [], 'test/checksums'))
 
 # EOF
