@@ -1,6 +1,7 @@
 // -*- Mode: C++ -*-
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <checksum/onescomplement.hh>
@@ -115,7 +116,7 @@ int main()
     if (~lchecksum == 0) lchecksum = checksum;
 
     if (lchecksum != checksum) {
-      printf("f%02u: checksum fail!\n");
+      printf("f%02u: checksum fail!\n", f);
       ret = EXIT_FAILURE;
     }
   }
@@ -136,7 +137,7 @@ int main()
     if (~lchecksum == 0) lchecksum = checksum;
 
     if (lchecksum != checksum) {
-      printf("f%02u: checksum fail!\n");
+      printf("f%02u: checksum fail!\n", f);
       ret = EXIT_FAILURE;
     }
   }
