@@ -45,7 +45,7 @@ static uint8_t p2[] = { 0x45, 0x00, 0x00, 0x73,
                         0x40, 0x11, 0xb8, 0x61,
                         0xc0, 0xa8, 0x00, 0x01,
                         0xc0, 0xa8, 0x00, 0xc7,
-                         
+
 };
 
 static struct {
@@ -61,6 +61,11 @@ static struct {
 static unsigned long (*checksum_fun[])(uint8_t const *, size_t, bool &) = {
   checksum_adc,
   checksum_sse,
+};
+
+static unsigned long (*move_fun[])(uint8_t const *, uint8_t *, size_t, bool &) = {
+  checksum_move_adc,
+  checksum_move_sse,
 };
 
 static uint64_t rdtsc()
@@ -80,27 +85,62 @@ int main()
         unsigned long first  = checksum_fun[f](data[i].data, start, odd);
         unsigned long second = checksum_fun[f](data[i].data + start, data[i].length - start, odd);
         uint16_t checksum = combine(add(first, second));
-        
+
         if (checksum != data[i].checksum)
-          printf("[%02u:%02u:%04u] %08x + %08x = %04x : %04x\n",
+          printf("[%02u:%02u:%04u] %08lx + %08lx = %04x : %04x\n",
                  f, i, start, first, second, checksum, data[i].checksum);
       }
     }
 
   // Performance
-  const size_t buf_len = 16 << 20;
+  const size_t buf_len = 2 << 20;
   uint8_t *buf = new uint8_t[buf_len];
-  
+  uint8_t *dst = new uint8_t[buf_len];
+
+  //  ... Checksumming
   for (unsigned f = 0; f < sizeof(checksum_fun)/sizeof(checksum_fun[0]); f++) {
     memset(buf, 0xFE, buf_len);
-    
+
     bool     odd   = false;
     uint64_t start = rdtsc();
     uint16_t checksum = combine(checksum_fun[f](buf, buf_len, odd));
     uint64_t end   = rdtsc();
-    
-    printf("f%02u: %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+
+    printf("f%02u: checksum %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
   }
+
+  //  ... Move
+  for (unsigned f = 0; f < sizeof(move_fun)/sizeof(move_fun[0]); f++) {
+    memset(buf, 0xFE, buf_len);
+    memset(dst, 0xFE, buf_len);
+
+    bool     odd   = false;
+    uint64_t start = rdtsc();
+    uint16_t checksum = combine(move_fun[f](buf, dst, buf_len, odd));
+    uint64_t end   = rdtsc();
+
+    assert(memcmp(dst, buf, buf_len) == 0);
+    printf("f%02u: move %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+  }
+
+  //  ... Copy+Move
+  assert(sizeof(move_fun)/sizeof(move_fun[0])
+         == sizeof(checksum_fun)/sizeof(checksum_fun[0]));
+
+  for (unsigned f = 0; f < sizeof(move_fun)/sizeof(move_fun[0]); f++) {
+    memset(buf, 0xFE, buf_len);
+    memset(dst, 0xFE, buf_len);
+
+    bool     odd   = false;
+    uint64_t start = rdtsc();
+    uint16_t checksum = combine(checksum_fun[f](buf, buf_len, odd));
+    memcpy(buf, dst, buf_len);
+    uint64_t end   = rdtsc();
+
+    assert(memcmp(dst, buf, buf_len) == 0);
+    printf("f%02u: checksum+copy %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+  }
+
 
   return 0;
 }

@@ -47,6 +47,13 @@ namespace OnesComplement {
     return state;
   }
 
+  static inline unsigned long
+  checksum_move_rest(unsigned long state, uint8_t const *src, uint8_t *dst, size_t size, bool &odd)
+  {
+    memcpy(dst, src, size);
+    return checksum_rest(state, src, size, odd);
+  }
+
   /// Computes a one's complement checksum. Data is in network byte
   /// order. Checksum is in host byte order.
   static inline unsigned long
@@ -73,6 +80,41 @@ namespace OnesComplement {
     rstate = !odd ? rstate : Endian::bswap(rstate);
 
     return checksum_rest(rstate, buf, size, odd);
+  }
+
+  static inline unsigned long
+  checksum_move_adc(uint8_t const *src, uint8_t *dst, size_t size, bool &odd)
+  {
+    unsigned long rstate = 0;
+
+    while (size >= sizeof(unsigned long)*4) {
+      unsigned long const *b = reinterpret_cast<unsigned long const *>(src);
+      unsigned long       *d = reinterpret_cast<unsigned long       *>(dst);
+
+      d[0] = b[0];
+      d[1] = b[1];
+      d[2] = b[2];
+      d[3] = b[3];
+
+      asm ("add %1, %0\n"
+           "adc %2, %0\n"
+           "adc %3, %0\n"
+           "adc %4, %0\n"
+           "adc $0, %0\n"
+           : "+r" (rstate)
+           : "rm" (b[0]),
+             "rm" (b[1]),
+             "rm" (b[2]),
+             "rm" (b[3]));
+
+
+      src  += sizeof(unsigned long)*4;
+      dst  += sizeof(unsigned long)*4;
+      size -= sizeof(unsigned long)*4;
+    }
+    rstate = !odd ? rstate : Endian::bswap(rstate);
+
+    return checksum_move_rest(rstate, src, dst, size, odd);
   }
 
 #ifdef __SSE2__
@@ -115,10 +157,7 @@ namespace OnesComplement {
   static inline unsigned long
   checksum_sse(uint8_t const *buf, size_t size, bool &odd)
   {
-
     unsigned long astate = 0;
-
-    uint8_t const *buf_end = buf + size;
 #ifdef __SSE2__
     {
       __m128i     sum = _mm_setzero_si128();
@@ -142,6 +181,37 @@ namespace OnesComplement {
     return checksum_rest(astate, buf, size, odd);
   }
 
+  static inline unsigned long
+  checksum_move_sse(uint8_t const *src, uint8_t *dst, size_t size, bool &odd)
+  {
+    unsigned long astate = 0;
+
+#ifdef __SSE2__
+    {
+      __m128i     sum = _mm_setzero_si128();
+
+      while (size >= sizeof(__m128i)*2) {
+        __m128i v1 = _mm_loadu_si128(reinterpret_cast<__m128i const *>(src));
+        __m128i v2 = _mm_loadu_si128(reinterpret_cast<__m128i const *>(src) + 1);
+
+        sum = sse_step(sum, v1, v2);
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),     v1);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst) + 1, v2);
+
+        size -= sizeof(__m128i)*2;
+        src  += sizeof(__m128i)*2;
+        dst  += sizeof(__m128i)*2;
+      }
+
+      astate = sse_final(sum, odd);
+    }
+#else
+#warning SSE2 not available
+#endif
+
+    return checksum_move_rest(astate, src, dst, size, odd);
+  }
 }
 
 // EOF
