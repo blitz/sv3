@@ -1,0 +1,108 @@
+// -*- Mode: C++ -*-
+
+#include <cstdio>
+#include <cstring>
+
+#include <checksum/onescomplement.hh>
+
+using namespace OnesComplement;
+
+static uint8_t p0[] = { 0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+                        0xFF, 0xFF, 0xFF, 0xFF,
+};
+
+static uint8_t p1[] = { 0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+                        0x00, 0x01, 0x00, 0x01,
+};
+
+static uint8_t p2[] = { 0x45, 0x00, 0x00, 0x73,
+                        0x00, 0x00, 0x40, 0x00,
+                        0x40, 0x11, 0xb8, 0x61,
+                        0xc0, 0xa8, 0x00, 0x01,
+                        0xc0, 0xa8, 0x00, 0xc7,
+                         
+};
+
+static struct {
+  uint8_t *data;
+  size_t   length;
+  uint16_t checksum;
+} data[] = {
+  { p0, sizeof(p0), 0xFFFF },
+  { p1, sizeof(p1), 0x1200 },
+  { p2, sizeof(p1), 0xFFFF },
+};
+
+static unsigned long (*checksum_fun[])(uint8_t const *, size_t, bool &) = {
+  checksum_adc,
+  checksum_sse,
+};
+
+static uint64_t rdtsc()
+{
+  uint32_t lo, hi;
+  asm volatile  ("rdtsc" : "=a" (lo), "=d" (hi));
+  return static_cast<uint64_t>(hi) << 32 | lo;
+}
+
+int main()
+{
+  // Correctness
+  for (unsigned f = 0; f < sizeof(checksum_fun)/sizeof(checksum_fun[0]); f++)
+    for (unsigned i = 0; i < sizeof(data)/sizeof(data[0]); i++) {
+      for (unsigned start = 0; start <= data[i].length; start++) {
+        bool odd        = false;
+        unsigned long first  = checksum_fun[f](data[i].data, start, odd);
+        unsigned long second = checksum_fun[f](data[i].data + start, data[i].length - start, odd);
+        uint16_t checksum = combine(add(first, second));
+        
+        if (checksum != data[i].checksum)
+          printf("[%02u:%02u:%04u] %08x + %08x = %04x : %04x\n",
+                 f, i, start, first, second, checksum, data[i].checksum);
+      }
+    }
+
+  // Performance
+  const size_t buf_len = 16 << 20;
+  uint8_t *buf = new uint8_t[buf_len];
+  
+  for (unsigned f = 0; f < sizeof(checksum_fun)/sizeof(checksum_fun[0]); f++) {
+    memset(buf, 0xFE, buf_len);
+    
+    bool     odd   = false;
+    uint64_t start = rdtsc();
+    uint16_t checksum = combine(checksum_fun[f](buf, buf_len, odd));
+    uint64_t end   = rdtsc();
+    
+    printf("f%02u: %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+  }
+
+  return 0;
+}
+
+// EOF
