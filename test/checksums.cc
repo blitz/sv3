@@ -77,6 +77,8 @@ static uint64_t rdtsc()
 
 int main()
 {
+  int ret = EXIT_SUCCESS;
+
   // Correctness
   for (unsigned f = 0; f < sizeof(checksum_fun)/sizeof(checksum_fun[0]); f++)
     for (unsigned i = 0; i < sizeof(data)/sizeof(data[0]); i++) {
@@ -86,16 +88,19 @@ int main()
         unsigned long second = checksum_fun[f](data[i].data + start, data[i].length - start, odd);
         uint16_t checksum = combine(add(first, second));
 
-        if (checksum != data[i].checksum)
-          printf("[%02u:%02u:%04u] %08lx + %08lx = %04x : %04x\n",
+        if (checksum != data[i].checksum) {
+          printf("CHECKSUM FAIL [%02u:%02u:%04u] %08lx + %08lx = %04x : %04x\n",
                  f, i, start, first, second, checksum, data[i].checksum);
+          ret = EXIT_FAILURE;
+        }
       }
     }
 
   // Performance
-  const size_t buf_len = 2 << 20;
+  const size_t buf_len = 16 << 20;
   uint8_t *buf = new uint8_t[buf_len];
   uint8_t *dst = new uint8_t[buf_len];
+  uint32_t lchecksum = ~0L;
 
   //  ... Checksumming
   for (unsigned f = 0; f < sizeof(checksum_fun)/sizeof(checksum_fun[0]); f++) {
@@ -106,10 +111,17 @@ int main()
     uint16_t checksum = combine(checksum_fun[f](buf, buf_len, odd));
     uint64_t end   = rdtsc();
 
-    printf("f%02u: checksum %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+    printf("f%02u:      checksum %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+    if (~lchecksum == 0) lchecksum = checksum;
+
+    if (lchecksum != checksum) {
+      printf("f%02u: checksum fail!\n");
+      ret = EXIT_FAILURE;
+    }
   }
 
   //  ... Move
+  lchecksum = ~0L;
   for (unsigned f = 0; f < sizeof(move_fun)/sizeof(move_fun[0]); f++) {
     memset(buf, 0xFE, buf_len);
     memset(dst, 0xFE, buf_len);
@@ -120,7 +132,13 @@ int main()
     uint64_t end   = rdtsc();
 
     assert(memcmp(dst, buf, buf_len) == 0);
-    printf("f%02u: move %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+    printf("f%02u:          move %3.2f bytes/cycle: %04x\n", f, static_cast<float>(buf_len) / (end - start), checksum);
+    if (~lchecksum == 0) lchecksum = checksum;
+
+    if (lchecksum != checksum) {
+      printf("f%02u: checksum fail!\n");
+      ret = EXIT_FAILURE;
+    }
   }
 
   //  ... Copy+Move
@@ -142,7 +160,7 @@ int main()
   }
 
 
-  return 0;
+  return ret;
 }
 
 // EOF
