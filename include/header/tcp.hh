@@ -25,9 +25,10 @@ namespace TCP {
 
     template<class IP>
     bool checksum_ok(IP const *ip) const {
+      uint16_t      plen  = ip->payload_length(); // Helping the common subexpression elimination along...
       unsigned long state = ip->checksum_tcp_pseudo();
       uint16_t res = ~OnesComplement::fold(OnesComplement::add(state, OnesComplement::checksum(reinterpret_cast<uint8_t const *>(this),
-                                                                                               ip->payload_length())));
+                                                                                               plen)));
       return res == 0;
     }
   };
