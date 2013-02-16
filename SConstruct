@@ -49,10 +49,12 @@ host_pcap_env = conf.Finish()
 # Tests
 
 host_env.Program('test/checksums', ['test/checksums.cc'])
-host_env.AddPostAction('test/checksums', Command('$SOURCE', [], 'test/checksums'))
+Command('test/checksums.log', ['test/checksums'], '$SOURCE | tee $TARGET')
 
 if pcap_is_available:
     host_pcap_env.Program('test/packets', ['test/packets.cc'])
+    Command('test/packets.log', ['test/packets', 'test/data/ipv4-tcp.pcap' ], '! ${SOURCES[0]} ${SOURCES[1]} | tee $TARGET | grep -q wrong')
+    #AddPostAction('test/packets', Command([], ['test/packets', 'test/data/ipv4-tcp.pcap'], 'foxo'))
 else:
     print("Not building test/packets!")
 

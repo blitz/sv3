@@ -23,10 +23,10 @@ static void parse_ipv4(IPv4::Header const *ipv4)
   }
 }
 
-int main()
+int main(int argc, char **argv)
 {
   char err[PCAP_ERRBUF_SIZE];
-  pcap_t *handle = pcap_fopen_offline(stdin, err);
+  pcap_t *handle = pcap_open_offline(argv[1], err);
 
   if (!handle) { puts(err); return EXIT_FAILURE; }
 
