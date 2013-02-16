@@ -32,6 +32,8 @@ if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOpt
     Exit(1)
 
 conf.AddOptionalFlag('.c', 'CCFLAGS', '-march=native')
+conf.AddOptionalFlag('.c', 'CCFLAGS', '-Wall')
+conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-Weffc++')
 
 host_env = conf.Finish()
 
