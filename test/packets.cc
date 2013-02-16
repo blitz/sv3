@@ -7,11 +7,20 @@
 #include <pcap.h>
 
 #include <header/ethernet.hh>
+#include <header/ipv4.hh>
+#include <header/tcp.hh>
 
 static void parse_ipv4(IPv4::Header const *ipv4)
 {
   assert(ipv4->version == 4);
-  printf("ipv4 checksum %s", ipv4->checksum_ok() ? "ok" : "wrong");
+  printf("ipv4 checksum %s ", ipv4->checksum_ok() ? "ok" : "wrong");
+  switch (ipv4->proto) {
+  case IPv4::Proto::TCP:
+    printf("tcp %s ", ipv4->tcp()->checksum_ok(ipv4) ? "ok" : "wrong");
+    break;
+  default:
+    break;
+  }
 }
 
 int main()

@@ -23,13 +23,22 @@ namespace OnesComplement {
   add(unsigned long a, unsigned long b)
   {
     asm ("add %1, %0;"
-         "adc $0, %0;" : "+rm" (a) : "rm" (b));
+         "adc $0, %0;" : "+r" (a) : "rm" (b));
+    return a;
+  }
+
+  static inline unsigned long
+  add(unsigned long a, unsigned long b, unsigned long c)
+  {
+    asm ("add %1, %0;"
+         "add %2, %0;"
+         "adc $0, %0;" : "+r" (a) : "rm" (b), "rm" (c));
     return a;
   }
 
   /// Fold checksum state into the final 16-bit word. This is in host
   /// byte order.
-  static unsigned long fold(unsigned long words)
+  static uint16_t fold(unsigned long words)
   {
     uint32_t res = 0;
     for (unsigned word = 0; word < sizeof(words)/2; word++)
