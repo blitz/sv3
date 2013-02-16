@@ -6,7 +6,7 @@
 #include <checksum/onescomplement.hh>
 
 namespace TCP {
-  class Header;
+  struct Header;
 }
 
 namespace IPv4 {
