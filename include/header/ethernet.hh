@@ -5,6 +5,7 @@
 
 #include <endian.hh>
 #include <header/ipv4.hh>
+#include <header/ipv6.hh>
 
 namespace Ethernet {
 
@@ -24,7 +25,7 @@ namespace Ethernet {
 
     union {
       IPv4::Header ipv4[];
-      IPv4::Header ipv6[];
+      IPv6::Header ipv6[];
     };
   };
 

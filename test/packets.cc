@@ -8,15 +8,29 @@
 
 #include <header/ethernet.hh>
 #include <header/ipv4.hh>
+#include <header/ipv6.hh>
 #include <header/tcp.hh>
 
 static void parse_ipv4(IPv4::Header const *ipv4)
 {
-  assert(ipv4->version == 4);
+  assert(ipv4->version() == 4);
   printf("ipv4 checksum %s ", ipv4->checksum_ok() ? "ok" : "wrong");
   switch (ipv4->proto) {
   case IPv4::Proto::TCP:
-    printf("tcp %s ", ipv4->tcp()->checksum_ok(ipv4) ? "ok" : "wrong");
+    printf("tcp %s ", ipv4->payload()->tcp.checksum_ok(ipv4) ? "ok" : "wrong");
+    break;
+  default:
+    break;
+  }
+}
+
+static void parse_ipv6(IPv6::Header const *ipv6)
+{
+  assert(ipv6->version() == 6);
+  printf("ipv6 ");
+  switch (ipv6->next_header) {
+  case IPv6::Proto::TCP:
+    printf("tcp %s ", ipv6->payload()->tcp.checksum_ok(ipv6) ? "ok" : "wrong");
     break;
   default:
     break;
@@ -44,7 +58,7 @@ int main(int argc, char **argv)
       parse_ipv4(header->ipv4);
       break;
     case Ethernet::Ethertype::IPV6:
-      printf("ipv6 ");
+      parse_ipv6(header->ipv6);
       break;
     }
 

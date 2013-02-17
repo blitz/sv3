@@ -4,10 +4,7 @@
 #include <compiler.h>
 
 #include <checksum/onescomplement.hh>
-
-namespace TCP {
-  struct Header;
-}
+#include <header/tcp.hh>
 
 namespace IPv4 {
 
@@ -23,8 +20,8 @@ namespace IPv4 {
 
   struct PACKED Header {
     // GCC bit order weirdness.
-    uint8_t  ihl     : 4;
-    uint8_t  version : 4;
+    uint8_t  ihl      : 4;
+    uint8_t  _version : 4;
 
     uint8_t  tos;
     uint16_t len;
@@ -53,10 +50,18 @@ namespace IPv4 {
       return Endian::bswap16(len) - ihl*4;
     }
 
-    /// Returns an unfolded checksum for the TCP pseudo header.
-    unsigned long checksum_tcp_pseudo() const {
+    union Payload {
+      TCP::Header tcp;
+    };
+
+    uint8_t        version() const { return _version; }
+    Payload       *payload()       { return reinterpret_cast<Payload       *>(options + ihl - 5); }
+    Payload const *payload() const { return reinterpret_cast<Payload const *>(options + ihl - 5); }
+
+    /// Returns an unfolded checksum for the TCP/UDP pseudo header.
+    unsigned long pseudo_checksum() const {
       // Initial state covers TCP length and IP protocol.
-      unsigned long state = static_cast<unsigned long>(Endian::bswap(static_cast<uint32_t>(Proto::TCP) + payload_length()));
+      unsigned long state = static_cast<unsigned long>(Endian::bswap(static_cast<uint32_t>(proto) + payload_length()));
       // Now add both IP addresses
 #if      __SIZEOF_LONG__ == 8
       state = OnesComplement::add(state, *reinterpret_cast<unsigned long const *>(&src));
@@ -69,11 +74,9 @@ namespace IPv4 {
 #endif
       return state;
     }
-
-    TCP::Header       *tcp()       { return reinterpret_cast<TCP::Header       *>(options + ihl - 5); }
-    TCP::Header const *tcp() const { return reinterpret_cast<TCP::Header const *>(options + ihl - 5); }
   };
 
+  static_assert(sizeof(Header) == 20, "IPv4 header layout broken");
 }
 
 // EOF

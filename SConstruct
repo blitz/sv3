@@ -53,8 +53,8 @@ Command('test/checksums.log', ['test/checksums'], '$SOURCE | tee $TARGET')
 
 if pcap_is_available:
     host_pcap_env.Program('test/packets', ['test/packets.cc'])
-    Command('test/packets.log', ['test/packets', 'test/data/ipv4-tcp.pcap' ], '! ${SOURCES[0]} ${SOURCES[1]} | tee $TARGET | grep -q wrong')
-    #AddPostAction('test/packets', Command([], ['test/packets', 'test/data/ipv4-tcp.pcap'], 'foxo'))
+    Command('test/packets-ipv4-tcp.log', ['test/packets', 'test/data/ipv4-tcp.pcap' ], '! ${SOURCES[0]} ${SOURCES[1]} | tee $TARGET | grep -q wrong')
+    Command('test/packets-ipv6-tcp.log', ['test/packets', 'test/data/ipv6-tcp.pcap' ], '! ${SOURCES[0]} ${SOURCES[1]} | tee $TARGET | grep -q wrong')
 else:
     print("Not building test/packets!")
 
