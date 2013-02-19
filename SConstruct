@@ -46,6 +46,10 @@ else:
     pcap_is_available = True
 host_pcap_env = conf.Finish()
 
+# Programs
+
+host_env.Program('switch', ['switch.cc'])
+
 # Tests
 
 host_env.Program('test/checksums', ['test/checksums.cc'])
