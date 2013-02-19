@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <hash/onescomplement.hh>
+#include <util.hh>
 
 using namespace OnesComplement;
 
@@ -68,13 +69,6 @@ static unsigned long (*move_fun[])(uint8_t const *, uint8_t *, size_t, bool &) =
   checksum_move_adc,
   checksum_move_sse,
 };
-
-static uint64_t rdtsc()
-{
-  uint32_t lo, hi;
-  asm volatile  ("rdtsc" : "=a" (lo), "=d" (hi));
-  return static_cast<uint64_t>(hi) << 32 | lo;
-}
 
 int main()
 {
