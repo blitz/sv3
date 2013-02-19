@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <checksum/onescomplement.hh>
+#include <hash/onescomplement.hh>
 
 using namespace OnesComplement;
 

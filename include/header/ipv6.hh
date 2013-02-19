@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <compiler.h>
 
-#include <checksum/onescomplement.hh>
+#include <hash/onescomplement.hh>
 #include <header/tcp.hh>
 
 namespace IPv6 {
