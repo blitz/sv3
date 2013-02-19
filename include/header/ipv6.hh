@@ -45,7 +45,7 @@ namespace IPv6 {
       // XXX Wrong with option headers present, can be greatly optimized!
       unsigned long state = OnesComplement::checksum(src.byte, sizeof(Address));
       state = OnesComplement::add(state, OnesComplement::checksum(dst.byte, sizeof(Address)));
-      state = OnesComplement::add(state, Endian::bswap(static_cast<unsigned long>(payload_length() + uint8_t(next_header))));
+      state = OnesComplement::add(state, Endian::bswapl(static_cast<unsigned long>(payload_length() + uint8_t(next_header))));
       return state;
     }
 
