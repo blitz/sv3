@@ -57,6 +57,7 @@ host_env.Program('test/checksums', ['test/checksums.cc'])
 Command('test/checksums.log', ['test/checksums'], '$SOURCE | tee $TARGET')
 
 host_env.Program('test/etherhash', ['test/etherhash.cc'])
+host_env.Command('test/etherhash.log', ['test/etherhash' ], '$SOURCE | tee $TARGET')
 
 if pcap_is_available:
     host_pcap_env.Program('test/packets', ['test/packets.cc'])
