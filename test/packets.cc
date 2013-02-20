@@ -39,6 +39,11 @@ static void parse_ipv6(IPv6::Header const *ipv6)
 
 int main(int argc, char **argv)
 {
+  if (argc != 2) {
+    fprintf(stderr, "No pcap file given.\n");
+    return EXIT_FAILURE;
+  }
+
   char err[PCAP_ERRBUF_SIZE];
   pcap_t *handle = pcap_open_offline(argv[1], err);
 
