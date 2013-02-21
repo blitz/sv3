@@ -11,7 +11,7 @@ namespace Ethernet {
     uint32_t r1;
     asm ("crc32w  (%1), %0\n"
          "crc32l 2(%1), %0\n"
-         : "=r" (r1)
+         : "=&r" (r1)
            // Need reference to content of addr otherwise the compiler
            // thinks we only depend on the poiner value.
          : "r" (addr.byte), "m" (addr));
