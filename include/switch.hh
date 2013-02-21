@@ -4,36 +4,29 @@
 #include <hash/ethernet.hh>
 #include <hash/hashtable.hh>
 #include <util.hh>
+#include <packetjob.hh>
 
 #include <list>
-#include <functional>
+
 
 namespace Switch {
 
+  constexpr static unsigned MAX_MTU = 9000;
+
   class Switch;
 
-  class Packet {
-
-  };
-
-  class PacketJob {
-
-  public:
-    virtual void do_packets(std::function<void(Packet &)> f);
-    virtual ~PacketJob() { }
-  };
-
   class Port : Uncopyable {
+  protected:
     Switch     &_switch;
     char const *_name;
 
-  protected:
     void logf(char const *str, ...);
     
   public:
     char const *name() const { return _name; }
 
-    virtual void receive(PacketJob &pj) = 0;
+    virtual void       receive(Port &src_port, PacketJob const &pj) = 0;
+    virtual PacketJob *poll() = 0;
 
     Port(Switch &sw, char const *name);
     virtual ~Port();
@@ -43,19 +36,26 @@ namespace Switch {
   class BroadcastPort : public Port {
 
   public:
-    virtual void receive(PacketJob &pj);
+    virtual void       receive(Port &src_port, PacketJob const &pj);
+    virtual PacketJob *poll   ();
+
     BroadcastPort(Switch &sw) : Port(sw, "broadcast") { }
   };
 
-  class Switch : Uncopyable {
-    Hashtable<Ethernet::Address, Port, Ethernet::hash, 1024> _mac_table;
 
+  typedef Hashtable<Ethernet::Address, Port, Ethernet::hash, 1024> SwitchHash;
+
+  class Switch : Uncopyable {
+  protected:
+    SwitchHash        _mac_table;
     std::list<Port *> _ports;
     BroadcastPort     _bcast_port;
 
     void logf(char const *str, ...);
 
   public:
+
+    std::list<Port *> const ports() const { return _ports; }
 
     void loop();
     void attach_port(Port &p);
