@@ -1,6 +1,7 @@
 *.o
+*.a
 *~
 .sc*
 /config.log
-/switch
+/test-switch
 

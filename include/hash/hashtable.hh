@@ -7,12 +7,25 @@
 
 template <typename KEY, typename VALUE, uint32_t (*HASH)(KEY const &), unsigned BUCKETS>
 class Hashtable {
-  VALUE *_buckets[BUCKETS];
+  struct {
+    KEY    k;
+    VALUE *v;
+  } _buckets[BUCKETS];
+  
 
 public:
 
   VALUE *&operator[](KEY const &key) {
-    return _buckets[HASH(key) % BUCKETS];
+    auto &entry = _buckets[HASH(key)];
+    return (entry.k == key) ? entry.v : nullptr;
+  }
+
+  void add(KEY const &key, VALUE *value)
+  {
+    auto &entry = _buckets[HASH(key)];
+    // XXX Locking or atomic update!
+    entry.k = key;
+    entry.v = value;
   }
 
   Hashtable() : _buckets() {}

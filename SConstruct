@@ -47,9 +47,13 @@ else:
     pcap_is_available = True
 host_pcap_env = conf.Finish()
 
+# Switch library
+
+host_env.StaticLibrary('switch', Glob('switch/*.cc'))
+
 # Programs
 
-host_env.Program('switch', ['switch.cc'])
+host_env.Program('test-switch', ['switch.cc'], LIBS = ['switch'], LIBPATH = ['.'])
 
 # Tests
 
