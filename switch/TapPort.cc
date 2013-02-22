@@ -8,6 +8,10 @@
 #include <sys/ioctl.h>
 #include <linux/if_tun.h>
 
+#define class _class
+#include <linux/virtio_net.h>
+#undef class
+
 #include <errno.h>
 
 #include <tapport.hh>
@@ -20,6 +24,7 @@ namespace Switch {
     struct iovec iov[Packet::MAX_FRAGMENTS];
     pj.do_packets([&](Packet const &p) {
         p.to_iovec(iov);
+        // XXX Write virtio header?
         ssize_t r = writev(_fd, iov, p.fragments);
         if (r < 0) {
           throw std::system_error(errno, std::system_category());
@@ -51,6 +56,10 @@ namespace Switch {
    
     if (0 != ioctl(_fd, TUNGETVNETHDRSZ, &_header_size))
       throw std::system_error(errno, std::system_category());
+    logf("Virtio header is %d bytes.", _header_size);
+    if (_header_size < sizeof(virtio_net_hdr))
+      logf("Virtio header is too small. Should be at least %zu bytes. Bad things will happen!",
+           sizeof(virtio_net_hdr));
   }
 }
 
