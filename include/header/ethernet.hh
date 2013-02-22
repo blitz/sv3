@@ -11,8 +11,13 @@
 namespace Ethernet {
 
   struct PACKED Address {
-    uint8_t byte[6];
-
+    union {
+      uint8_t byte[6];
+      struct PACKED {
+        uint32_t _w1;
+        uint16_t _w2;
+      };
+    };
     bool        is_multicast() const { return byte[0] & 1; }
     const char *to_str()       const;
 
@@ -26,7 +31,7 @@ namespace Ethernet {
 
   static inline bool operator==(Address const &a, Address const &b)
   {
-    return 0 == memcmp(a.byte, b.byte, sizeof(Address::byte));
+    return (a._w1 == b._w1) and (a._w2 == b._w2);
   }
 
   enum struct Ethertype : uint16_t {

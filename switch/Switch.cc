@@ -28,22 +28,20 @@ namespace Switch {
         if (pj == nullptr) continue;
 
         auto &ehdr     = pj->ethernet_header();
-        //logf("MAC %s hashes to %08x.", ehdr.dst.to_str(), Ethernet::hash(ehdr.dst));
-        Port *dst_port = not ehdr.dst.is_multicast() ? _mac_table[ehdr.dst] : nullptr;
+        Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? _mac_table[ehdr.dst] : nullptr;
         assert(dst_port != src_port and
                dst_port != &_bcast_port);
 
         if (not (src_port == &_bcast_port or ehdr.src.is_multicast())) {
           if (_mac_table[ehdr.src] != src_port)
-            logf("MAC %s owned by port '%s.", ehdr.src.to_str(),
+            logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
+                 Ethernet::hash(ehdr.src),
                  src_port->name());
 
           _mac_table.add(ehdr.src, src_port);
         }
 
-        if (UNLIKELY(!dst_port))
-          dst_port = &_bcast_port;
-
+        if (UNLIKELY(!dst_port)) dst_port = &_bcast_port;
         dst_port->receive(*src_port, *pj);
       }
       // XXX We should block here.

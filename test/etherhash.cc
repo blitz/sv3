@@ -44,7 +44,7 @@ int main()
 
   uint64_t start = rdtsc();
   for (unsigned i = 0; i < 1024; i++) {
-    volatile uint32_t h;
+    UNUSED volatile uint32_t h;
     asm ("" : "+m" (a));
     h = hash(a);
     asm ("" : "+m" (a));
@@ -55,7 +55,7 @@ int main()
     h = hash(a);
   }
   uint64_t end = rdtsc();
-  printf("%.2lf cycles\n", double(end - start)/(4*1024));
+  printf("%.4lf cycles\n", double(end - start)/(4*1024));
 
   return 0;
 }
