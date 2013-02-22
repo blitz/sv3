@@ -43,7 +43,7 @@ namespace Switch {
   };
 
 
-  typedef Hashtable<Ethernet::Address, Port, Ethernet::hash, 1024> SwitchHash;
+  typedef Hashtable<Ethernet::Address, Port *, Ethernet::hash, 1024, 1, nullptr> SwitchHash;
 
   class Switch : Uncopyable {
   protected:

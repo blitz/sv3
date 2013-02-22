@@ -2,28 +2,45 @@
 
 #include <cstdint>
 
-template <typename KEY, typename VALUE, uint32_t (HASH)(KEY const &), size_t BUCKETS>
+template <typename KEY, typename VALUE, uint32_t (HASH)(KEY const &),
+          size_t BUCKETS, unsigned WAYS, VALUE EMPTY>
 class Hashtable {
   struct {
-    KEY    k;
-    VALUE *v;
-  } _buckets[BUCKETS];
-  
+    VALUE v;
+    KEY   k;
+  } _buckets[BUCKETS][WAYS];
 
 public:
 
-  VALUE *operator[](KEY const &key) {
+  VALUE operator[](KEY const &key) {
     uint32_t index = HASH(key) % BUCKETS;
-    auto &entry = _buckets[index];
-    return (entry.k == key) ? entry.v : nullptr;
+    auto &slot = _buckets[index];
+    for (unsigned i = 0; i < WAYS; i++) {
+      auto &way = slot[i];
+      if (way.k == key) return way.v;
+    }
+    return nullptr;
   }
 
-  void add(KEY const &key, VALUE *value)
+  void add(KEY const &key, VALUE value)
   {
-    auto &entry = _buckets[HASH(key) % BUCKETS];
+    auto &slot = _buckets[HASH(key) % BUCKETS];
+
     // XXX Locking or atomic update!
-    entry.k = key;
-    entry.v = value;
+  again:
+    for (unsigned i = 0; i < WAYS; i++) {
+      auto &way = slot[i];
+      if (way.v == EMPTY) {
+        way.k = key; way.v = value;
+        return;
+      }
+    }
+
+    // Reset way
+    for (unsigned i = 0; i < WAYS; i++)
+      slot[i].v = EMPTY;
+ 
+    goto again;
   }
 
   Hashtable() : _buckets() {}
