@@ -22,10 +22,10 @@ namespace Switch {
 
     while (true) {
       for (Port *src_port : _ports) {
-        logf("Polling port '%s'.", src_port->name());
 
         PacketJob *pj = src_port->poll();
         if (pj == nullptr) continue;
+        logf("Polling port '%s' returned packet.", src_port->name());
 
         auto &ehdr     = pj->ethernet_header();
         Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? _mac_table[ehdr.dst] : nullptr;
