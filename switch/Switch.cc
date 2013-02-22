@@ -28,6 +28,9 @@ namespace Switch {
         logf("Polling port '%s' returned packet.", src_port->name());
 
         auto &ehdr     = pj->ethernet_header();
+        logf("Destination %s", ehdr.dst.to_str());
+        logf("Source      %s", ehdr.src.to_str());
+
         Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? _mac_table[ehdr.dst] : nullptr;
         assert(dst_port != src_port and
                dst_port != &_bcast_port);

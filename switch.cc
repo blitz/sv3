@@ -1,9 +1,11 @@
 
-#include <switch.hh>
-#include <hash/ethernet.hh>
-
 #include <cstdio>
 #include <algorithm>
+
+
+#include <hash/ethernet.hh>
+#include <switch.hh>
+#include <tapport.hh>
 
 class TestPort : public Switch::Port {
 protected:
@@ -16,7 +18,7 @@ protected:
   };
 
 public:
-  void receive(Port &src_port, Switch::PacketJob const &pj)
+  void receive(Port &src_port, Switch::PacketJob const &pj) override
   {
     logf("Packet job from '%s'.", src_port.name());
 
@@ -35,7 +37,7 @@ public:
       });
   }
 
-  Switch::PacketJob *poll()
+  Switch::PacketJob *poll() override
   {
     if (_has_packet) {
       _has_packet = false;
@@ -67,10 +69,12 @@ int main()
 {
   Switch::Switch sv3;
 
-  Ethernet::Address a1(0xFE, 0x12, 0, 0, 0, 1);
-  Ethernet::Address a2(0xFE, 0x12, 0, 0, 0, 2);
-  TestPort  tport1(sv3, "test1", a1, a2, false);
-  TestPort  tport2(sv3, "test2", a2, a1, true);
+  // Ethernet::Address a1(0xFE, 0x12, 0, 0, 0, 1);
+  // Ethernet::Address a2(0xFE, 0x12, 0, 0, 0, 2);
+  // TestPort  tport1(sv3, "test1", a1, a2, false);
+  // TestPort  tport2(sv3, "test2", a2, a1, true);
+
+  Switch::TapPort egress(sv3, "/dev/tap4");
 
   sv3.loop();
 
