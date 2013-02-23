@@ -1,12 +1,17 @@
 #pragma once
 
+#include <list>
+#include <functional>
+
+
 #include <header/ethernet.hh>
 #include <hash/ethernet.hh>
 #include <hash/hashtable.hh>
+
 #include <util.hh>
 #include <packetjob.hh>
+#include <mutex.hh>
 
-#include <list>
 
 
 namespace Switch {
@@ -47,21 +52,43 @@ namespace Switch {
 
   class Switch : Uncopyable {
   protected:
-    SwitchHash        _mac_table;
-    std::list<Port *> _ports;
-    BroadcastPort     _bcast_port;
+    typedef std::list<Port *> PortsList;
+
+    // Count main loop iterations for our primitive RCU scheme.
+    unsigned         _loop_count;
+    bool             _loop_running;
+
+    SwitchHash      *_mac_table;
+    PortsList const *_ports;
+
+    // Serializes access to _ports and _mac_table
+    Mutex            _ports_mtx;
+
+    // Broadcast traffic goes here.
+    BroadcastPort    _bcast_port;
 
     void logf(char const *str, ...);
 
+    // Wait until one loop iteration has passed. This is a no-op, if
+    // the main loop is not running.
+    void wait_loop_iteration();
+
+    // Modify the list of ports.
+    void modify_ports(std::function<void(PortsList &)> f);
+
   public:
 
-    std::list<Port *> const ports() const { return _ports; }
+    std::list<Port *> const &ports() const { return *_ports; }
 
     void loop();
     void attach_port(Port &p);
+    void detach_port(Port &p);
 
     Switch()
-      : _mac_table(), _ports(), _bcast_port(*this)
+      : _loop_count(0), _loop_running(false),
+        _mac_table(new SwitchHash), _ports(new PortsList),
+        _ports_mtx(),
+        _bcast_port(*this)
     {
     }
               

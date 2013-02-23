@@ -20,8 +20,12 @@ namespace Switch {
     const unsigned ms       = 1000;
     logf("Main loop entered. Polling every %ums.", ms);
 
+    _loop_running = true;
     while (true) {
-      for (Port *src_port : _ports) {
+      PortsList const &ports     = *_ports;     CONSIDER_MODIFIED(_ports);
+      SwitchHash      &mac_cache = *_mac_table; CONSIDER_MODIFIED(_mac_table);
+
+      for (Port *src_port : ports) {
 
         PacketJob *pj = src_port->poll();
         if (pj == nullptr) continue;
@@ -31,32 +35,86 @@ namespace Switch {
         logf("Destination %s", ehdr.dst.to_str());
         logf("Source      %s", ehdr.src.to_str());
 
-        Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? _mac_table[ehdr.dst] : nullptr;
+        Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? mac_cache[ehdr.dst] : nullptr;
         assert(dst_port != src_port and
                dst_port != &_bcast_port);
 
         if (not (src_port == &_bcast_port or ehdr.src.is_multicast())) {
-          if (_mac_table[ehdr.src] != src_port)
+          if (mac_cache[ehdr.src] != src_port)
             logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
                  Ethernet::hash(ehdr.src),
                  src_port->name());
 
-          _mac_table.add(ehdr.src, src_port);
+          mac_cache.add(ehdr.src, src_port);
         }
 
         if (UNLIKELY(!dst_port)) dst_port = &_bcast_port;
         dst_port->receive(*src_port, *pj);
       }
+
+      MEMORY_BARRIER;
+      _loop_count++;
+      MEMORY_BARRIER;
+
       // XXX We should block here.
       usleep(1000*ms);
     }
   }
 
+  void Switch::wait_loop_iteration()
+  {
+      unsigned old_loop_count = _loop_count;
+      while (_loop_running and old_loop_count == _loop_running) {
+        CONSIDER_MODIFIED(_loop_running);
+        CONSIDER_MODIFIED(_loop_count);
+        RELAX();
+      }
+  }
+
+  void Switch::modify_ports(std::function<void(PortsList &)> f)
+  {
+    Mutex::Guard g(_ports_mtx);
+    std::list<Port *> const *oldp = _ports;
+    std::list<Port *>       *newp = new std::list<Port *>(*_ports);
+    
+    f(*newp);
+
+    // Invalidate MAC address cache and update ports list. Wait until
+    // the main loop has picked it up.
+    SwitchHash *oldm = _mac_table;
+    _mac_table = new SwitchHash;
+    _ports     = newp;
+    MEMORY_BARRIER;
+    wait_loop_iteration();
+
+    delete oldm;
+    delete oldp;
+  }
+
   void Switch::attach_port(Port &p)
   {
-    _ports.push_front(&p);
-    logf("Attaching Port '%s'. We have %u port%s.",
-         p.name(), _ports.size(), _ports.size() == 1 ? "" : "s");
+    size_t size;
+    modify_ports([&](PortsList &ports) { ports.push_front(&p); size = ports.size(); });
+
+    logf("Attaching port '%s'. We have %zu port%s.",
+         p.name(), size, size == 1 ? "" : "s");
+  }
+
+  void Switch::detach_port(Port &p)
+  {
+    size_t size;
+    modify_ports([&](PortsList &ports) {
+        for (auto it = ports.begin(); it != ports.end(); ++it)
+          if (*it == &p) {
+            ports.erase(it);
+            size = ports.size();
+            break;
+          }
+        abort();
+      });
+
+    logf("Detaching port '%s'. %zu port%s left.\n",
+         p.name(), size, size == 1 ? "" : "s");
   }
 }
 

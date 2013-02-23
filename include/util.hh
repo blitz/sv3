@@ -18,4 +18,7 @@ protected:
   virtual ~Uncopyable() {}
 };
 
+#define CONSIDER_MODIFIED(x) asm volatile ("" : "+m" (x))
+#define RELAX() asm volatile ("pause");
+
 // EOF

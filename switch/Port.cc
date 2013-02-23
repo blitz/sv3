@@ -17,13 +17,15 @@ namespace Switch {
   Port::Port(Switch &sw, char const *name)
     : _switch(sw),  _name(name)
   {
+    _switch.attach_port(*this);
     logf("Created.");
-    sw.attach_port(*this);
   }
 
   Port::~Port()
   {
+    _switch.detach_port(*this);
     logf("Destroyed.");
+
   }
 
 }
