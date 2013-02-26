@@ -57,6 +57,10 @@ if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOpt
     print("Your compiler is too old.")
     Exit(1)
 
+if not conf.CheckCXXHeader('list'):
+    print("C++ STL seems broken.")
+    Exit(1)
+
 conf.AddOptionalFlag('.c', 'CCFLAGS',   '-march=corei7')
 conf.AddOptionalFlag('.c', 'LINKFLAGS', '-march=corei7')
 conf.AddOptionalFlag('.c', 'CCFLAGS', '-Wall')
