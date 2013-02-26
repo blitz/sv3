@@ -8,7 +8,7 @@ namespace Switch {
 
   class TapPort : public Port {
     int             _fd;
-    int             _header_size;
+    unsigned        _header_size;
     SinglePacketJob _sp;
     uint8_t         _data[MAX_MTU];
 

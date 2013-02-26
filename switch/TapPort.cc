@@ -19,7 +19,7 @@
 
 namespace Switch {
 
-  void TapPort::receive(Port &src_port, PacketJob const &pj)
+  void TapPort::receive(UNUSED Port &src_port, PacketJob const &pj)
   {
     struct iovec iov[Packet::MAX_FRAGMENTS];
     pj.do_packets([&](Packet const &p) {

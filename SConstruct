@@ -89,7 +89,7 @@ host_pcap_env = conf.Finish()
 host_env.StaticLibrary('switch', Glob('switch/*.cc'))
 
 ## Programs
-ts = host_env.Program('test-switch', ['switch.cc'], LIBS = ['switch'], LIBPATH = ['.'])
+ts = host_env.Program('sv3', ['sv3.cc'], LIBS = ['switch'], LIBPATH = ['.'])
 # Clean leftover core files as well
 Clean(ts, Glob("core.*"))
 
