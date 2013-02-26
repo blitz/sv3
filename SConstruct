@@ -61,8 +61,15 @@ if not conf.CheckCXXHeader('list'):
     print("C++ STL seems broken.")
     Exit(1)
 
-conf.AddOptionalFlag('.c', 'CCFLAGS',   '-march=corei7')
-conf.AddOptionalFlag('.c', 'LINKFLAGS', '-march=corei7')
+
+if not 'cpu' in ARGUMENTS:
+    opt_cpu = 'corei7'
+else:
+    opt_cpu = ARGUMENTS['cpu']
+
+conf.AddOptionalFlag('.c', 'CCFLAGS',   "-march=%s" % opt_cpu )
+conf.AddOptionalFlag('.c', 'LINKFLAGS', "-march=%s" % opt_cpu )
+
 conf.AddOptionalFlag('.c', 'CCFLAGS', '-Wall')
 #conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-Weffc++')
 
