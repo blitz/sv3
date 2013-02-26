@@ -5,7 +5,8 @@ print("Use 'scons -h' to show build help.")
 Help("""
 Usage: scons [force32=0/1] [cxx=COMPILER] [cpu=CPU]
 
-force32=0/1   Force 32-bit build, if force32=1
+force32=0/1   Force 32-bit build, if force32=1. Default is 0.
+debug=0/1     Build a debug version, if debug=1. Default is 0.
 cxx=COMPILER  Force build to use a specific C++ compiler
 cpu=CPU       Optimize for the given CPU. Passed to -march=
 """)
@@ -41,14 +42,20 @@ def CheckPreprocessorMacro(context, header, macro):
     context.Result(result)
     return result
 
-host_env = Environment(CCFLAGS = ['-pthread', '-O3', '-g'],
+host_env = Environment(CCFLAGS = ['-pthread'],
                        CXXFLAGS = [],
-                       LINKFLAGS = ['-pthread', '-g'],
+                       LINKFLAGS = ['-pthread'],
                        CPPPATH = ['#include'])
 
 if 'cxx' in ARGUMENTS:
     print("Forcing host C++ compiler to %s." % ARGUMENTS['cxx'])
     host_env['CXX'] = ARGUMENTS['cxx']
+
+if int(ARGUMENTS.get('debug', 1)):
+    host_env.Append(CCFLAGS   = ['-O1', '-g'],
+                    LINKFLAGS = ['-g'])
+else:
+    host_env.Append(CCFLAGS   = ['-O3'])
 
 if int(ARGUMENTS.get('force32', 0)):
     host_env.Append(CCFLAGS = ['-m32'],
