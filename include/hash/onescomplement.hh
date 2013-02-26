@@ -152,7 +152,6 @@ namespace OnesComplement {
 #ifdef __SSSE3__
     sum = _mm_hadd_epi32(sum, _mm_setzero_si128());
 #else  // No SSSE3
-#warning SSSE3 not available
     sum = _mm_add_epi32(sum, _mm_srli_si128(sum, 4));
 #endif
     if (odd) {
