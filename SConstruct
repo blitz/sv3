@@ -47,6 +47,9 @@ conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag 
                                             })
 
 if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
+    conf.env.Append(CCFLAGS = ['-DNO_GETVNETHDRSZ'])
+
+if not conf.CheckType('struct virtio_net_hdr', '#include <linux/virtio_net.h>\n'):
     print("Your Linux headers are too old.")
     Exit(1)
 

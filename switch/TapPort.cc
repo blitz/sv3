@@ -53,9 +53,13 @@ namespace Switch {
     _fd = open(dev, O_RDWR | O_NONBLOCK);
     if (_fd < 0)
       throw std::system_error(errno, std::system_category());
-   
+
+#ifdef NO_GETVNETHDRSZ
+    _header_size = sizeof(virtio_net_hdr);
+#else
     if (0 != ioctl(_fd, TUNGETVNETHDRSZ, &_header_size))
       throw std::system_error(errno, std::system_category());
+#endif
     logf("Virtio header is %d bytes.", _header_size);
     if (_header_size < sizeof(virtio_net_hdr))
       logf("Virtio header is too small. Should be at least %zu bytes. Bad things will happen!",
