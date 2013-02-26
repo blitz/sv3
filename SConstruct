@@ -12,6 +12,23 @@ def AddOptionalFlag(context, extension, key, flag):
         context.env[key] = old_var
     return result
 
+preproc_test_source_file = """
+#include <%s>
+int main(int argc, char **argv)
+{
+#ifdef %s
+  return 0;
+#else
+#error No
+#endif
+}"""
+
+def CheckPreprocessorMacro(context, header, macro):
+    context.Message("Looking for %s in %s..." % (macro, header))
+    result = context.TryLink(preproc_test_source_file % (header, macro), '.c')
+    context.Result(result)
+    return result
+
 host_env = Environment(CCFLAGS = ['-pthread', '-O3', '-g'],
                        CXXFLAGS = [],
                        LINKFLAGS = ['-pthread', '-g'],
@@ -25,7 +42,13 @@ if int(ARGUMENTS.get('force32', 0)):
     host_env.Append(CCFLAGS = ['-m32'],
                     LINKFLAGS = ['-m32'])
 
-conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag })
+conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag ,
+                                            'CheckPreprocessorMacro' : CheckPreprocessorMacro,
+                                            })
+
+if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
+    print("Your Linux headers are too old.")
+    Exit(1)
 
 if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
     print("Your compiler is too old.")
