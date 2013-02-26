@@ -1,5 +1,17 @@
 # -*- Mode: Python -*-
 
+print("Use 'scons -h' to show build help.")
+
+Help("""
+Usage: scons [force32=0/1] [cxx=COMPILER] [cpu=CPU]
+
+force32=0/1   Force 32-bit build, if force32=1
+cxx=COMPILER  Force build to use a specific C++ compiler
+cpu=CPU       Optimize for the given CPU. Passed to -march=
+""")
+
+
+
 # Add flag to env[key] if the compiler is able to build an object file
 # with this. extension can be '.c' or '.cc'.
 def AddOptionalFlag(context, extension, key, flag):
@@ -34,9 +46,9 @@ host_env = Environment(CCFLAGS = ['-pthread', '-O3', '-g'],
                        LINKFLAGS = ['-pthread', '-g'],
                        CPPPATH = ['#include'])
 
-if 'host_cxx' in ARGUMENTS:
-    print("Forcing host C++ compiler to %s." % ARGUMENTS['host_cxx'])
-    host_env['CXX'] = ARGUMENTS['host_cxx']
+if 'cxx' in ARGUMENTS:
+    print("Forcing host C++ compiler to %s." % ARGUMENTS['cxx'])
+    host_env['CXX'] = ARGUMENTS['cxx']
 
 if int(ARGUMENTS.get('force32', 0)):
     host_env.Append(CCFLAGS = ['-m32'],
@@ -60,7 +72,6 @@ if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOpt
 if not conf.CheckCXXHeader('list'):
     print("C++ STL seems broken.")
     Exit(1)
-
 
 if not 'cpu' in ARGUMENTS:
     opt_cpu = 'corei7'
