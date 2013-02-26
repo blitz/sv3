@@ -8,24 +8,25 @@ namespace Switch {
   {
     va_list  ap;
     va_start(ap, str);
-    printf("%16s: ", _name);
+    printf("%10s: ", _name);
     vprintf(str, ap);
     puts("");
     va_end(ap);
   }
 
+  void Port::enable()
+  {
+    _switch.attach_port(*this);
+  }
+
   Port::Port(Switch &sw, char const *name)
     : _switch(sw),  _name(name)
   {
-    _switch.attach_port(*this);
-    logf("Created.");
   }
 
   Port::~Port()
   {
     _switch.detach_port(*this);
-    logf("Destroyed.");
-
   }
 
 }

@@ -9,7 +9,7 @@ namespace Switch {
   {
     va_list  ap;
     va_start(ap, str);
-    printf("%16s: ", "switch");
+    printf("%10s: ", "switch");
     vprintf(str, ap);
     puts("");
     va_end(ap);
@@ -108,13 +108,12 @@ namespace Switch {
           if (*it == &p) {
             ports.erase(it);
             size = ports.size();
+
+            logf("Detaching port '%s'. %zu port%s left.",
+                 p.name(), size, size == 1 ? "" : "s");
             break;
           }
-        abort();
       });
-
-    logf("Detaching port '%s'. %zu port%s left.\n",
-         p.name(), size, size == 1 ? "" : "s");
   }
 }
 

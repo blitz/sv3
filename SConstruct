@@ -12,9 +12,9 @@ def AddOptionalFlag(context, extension, key, flag):
         context.env[key] = old_var
     return result
 
-host_env = Environment(CCFLAGS = ['-O3', '-g'],
+host_env = Environment(CCFLAGS = ['-pthread', '-O3', '-g'],
                        CXXFLAGS = [],
-                       LINKFLAGS = ['-g'],
+                       LINKFLAGS = ['-pthread', '-g'],
                        CPPPATH = ['#include'])
 
 if 'host_cxx' in ARGUMENTS:
@@ -55,6 +55,8 @@ host_env.StaticLibrary('switch', Glob('switch/*.cc'))
 ts = host_env.Program('test-switch', ['switch.cc'], LIBS = ['switch'], LIBPATH = ['.'])
 # Clean leftover core files as well
 Clean(ts, Glob("core.*"))
+
+ts = host_env.Program('sv3-remote', ['sv3-remote.cc'], LIBS = ['switch'], LIBPATH = ['.'])
 
 # Tests
 

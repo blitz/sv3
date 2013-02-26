@@ -5,6 +5,7 @@
 
 #include <hash/ethernet.hh>
 #include <switch.hh>
+#include <listener.hh>
 #include <tapport.hh>
 
 class TestPort : public Switch::Port {
@@ -67,14 +68,15 @@ public:
 
 int main()
 {
-  Switch::Switch sv3;
+  Switch::Switch   sv3;
+  Switch::Listener listener(sv3);
 
   // Ethernet::Address a1(0xFE, 0x12, 0, 0, 0, 1);
   // Ethernet::Address a2(0xFE, 0x12, 0, 0, 0, 2);
   // TestPort  tport1(sv3, "test1", a1, a2, false);
   // TestPort  tport2(sv3, "test2", a2, a1, true);
 
-  Switch::TapPort egress(sv3, "/dev/tap4");
+  // Switch::TapPort egress(sv3, "/dev/tap4");
 
   sv3.loop();
 

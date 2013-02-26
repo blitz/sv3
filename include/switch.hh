@@ -33,6 +33,9 @@ namespace Switch {
     virtual void       receive(Port &src_port, PacketJob const &pj) = 0;
     virtual PacketJob *poll() = 0;
 
+    // Call this after the instance is completely constructed.
+    void    enable();
+
     Port(Switch &sw, char const *name);
     virtual ~Port();
   };
@@ -51,6 +54,7 @@ namespace Switch {
   typedef Hashtable<Ethernet::Address, Port *, Ethernet::hash, 1024, 1, nullptr> SwitchHash;
 
   class Switch : Uncopyable {
+    friend class Listener;
   protected:
     typedef std::list<Port *> PortsList;
 
