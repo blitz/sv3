@@ -20,13 +20,14 @@ namespace Switch {
   }
 
   Port::Port(Switch &sw, char const *name)
-    : _switch(sw),  _name(name)
+    : _switch(sw),  _name(strdup(name))
   {
   }
 
   Port::~Port()
   {
     _switch.detach_port(*this);
+    delete _name;
   }
 
 }

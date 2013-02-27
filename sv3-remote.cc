@@ -4,6 +4,8 @@
 #include <util.hh>
 #include <cstdio>
 #include <unistd.h>
+#include <sys/mman.h>
+#include <sv3-client.h>
 
 using namespace Switch;
 
@@ -76,18 +78,30 @@ int main(int argc, char **argv)
   }
 
   if (strcmp(argv[2], "memmap") == 0) {
-    int tfd = tempfile(256 << 20);
+    const size_t mlen = 256 << 20;
+    int tfd = tempfile(mlen);
     if (tfd < 0) { perror("tempfile"); return EXIT_FAILURE; }
+    void *m = mmap(nullptr, mlen, PROT_READ | PROT_WRITE, MAP_SHARED, tfd, 0);
+    if (m == MAP_FAILED) { perror("mmap"); return EXIT_FAILURE; }
 
     ClientRequest req;
     req.type = ClientRequest::MEMORY_MAP;
-    req.memory_map.addr   = 0;
+    req.memory_map.addr   = reinterpret_cast<uintptr_t>(m);
     req.memory_map.size   = 256 << 20;
     req.memory_map.fd     = tfd;
     req.memory_map.offset = 0;
 
     ServerResponse resp = Listener::call(fd, req);
-    printf("%s\n", resp.status.success ? "Success" : "Failure");
+    printf("map: %s\n", resp.status.success ? "Success" : "Failure");
+
+    Sv3QueuePair *qp   = reinterpret_cast<Sv3QueuePair *>(m);
+    uint8_t      *pmem = reinterpret_cast<uint8_t *>(m) + sizeof(Sv3QueuePair);
+
+    req.type = ClientRequest::CREATE_PORT_QP;
+    req.create_port_qp.qp = reinterpret_cast<uintptr_t>(qp);
+    resp = Listener::call(fd, req);
+    printf("reg: %s\n",  resp.status.success ? "Success" : "Failure");
+
 
     return 0;
   }

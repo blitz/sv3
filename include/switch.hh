@@ -88,13 +88,7 @@ namespace Switch {
     void attach_port(Port &p);
     void detach_port(Port &p);
 
-    Switch()
-      : _loop_count(0), _loop_running(false),
-        _mac_table(new SwitchHash), _ports(new PortsList),
-        _ports_mtx(),
-        _bcast_port(*this)
-    {
-    }
+    Switch();
               
   };
 }

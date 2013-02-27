@@ -17,6 +17,7 @@ namespace Switch {
       PING,
       CREATE_PORT_TAP,
       MEMORY_MAP,
+      CREATE_PORT_QP,
     } type;
 
     union {
@@ -33,6 +34,9 @@ namespace Switch {
         int      fd;
         off_t    offset;
       } memory_map;
+      struct {
+        uint64_t qp;            // pointer
+      } create_port_qp;
     };
   };
 
@@ -62,6 +66,21 @@ namespace Switch {
     sockaddr_un  _sa;
 
     std::list<Region> _regions;
+    std::list<Port *> _ports;
+
+    template<typename P>
+    P *translate_ptr(uint64_t p) {
+      // XXX We don't care about length yet... p might cross a region
+      // boundary.
+
+      for (auto &r : _regions) {
+        uint64_t tp = p - r.addr;
+        if (tp < r.size)
+          return reinterpret_cast<P *>(r.mapping + tp);
+      }
+
+      return nullptr;
+    }
   };
 
 

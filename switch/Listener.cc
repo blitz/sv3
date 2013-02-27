@@ -11,6 +11,7 @@
 #include <system_error>
 #include <pthread.h>
 #include <tapport.hh>
+#include <qpport.hh>
 
 namespace Switch {
 
@@ -25,6 +26,10 @@ namespace Switch {
   void Listener::close_session(Session &session)
   {
     close(session._fd);
+
+    for (auto &p : session._ports)
+      delete p;
+
     for (auto &r : session._regions)
       munmap(r.mapping, r.size);
   }
@@ -83,7 +88,6 @@ namespace Switch {
     resp.type = ServerResponse::STATUS;
     resp.status.success = true;
 
-    //    _sw.logf("Client %3u: Request %u", session._fd, req.type);
     switch (req.type) {
     case ClientRequest::PING:
       break;
@@ -118,7 +122,14 @@ namespace Switch {
       }
 
       resp.status.success = insert_region(session, r);
+      break;
     }
+    case ClientRequest::CREATE_PORT_QP: {
+      char buf[32];
+      snprintf(buf, 32, "c%d qp", session._fd);
+      Port *p = new QpPort(_sw, buf, session, req.create_port_qp.qp);
+      p->enable();
+    };
       break;
     default:
       resp.status.success = false;
