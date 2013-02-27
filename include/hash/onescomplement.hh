@@ -23,7 +23,7 @@ namespace OnesComplement {
   add(unsigned long a, unsigned long b)
   {
     asm ("add %1, %0;"
-         "adc $0, %0;" : "+r" (a) : "rm" (b));
+         "adc $0, %0;" : "+&r" (a) : "rm" (b));
     return a;
   }
 
@@ -32,7 +32,7 @@ namespace OnesComplement {
   {
     asm ("add %1, %0;"
          "add %2, %0;"
-         "adc $0, %0;" : "+r" (a) : "rm" (b), "rm" (c));
+         "adc $0, %0;" : "+&r" (a) : "rm" (b), "rm" (c));
     return a;
   }
 
@@ -78,7 +78,7 @@ namespace OnesComplement {
            "adc %3, %0\n"
            "adc %4, %0\n"
            "adc $0, %0\n"
-           : "+r" (rstate)
+           : "+&r" (rstate)
            : "rm" (b[0]),
              "rm" (b[1]),
              "rm" (b[2]),
@@ -111,7 +111,7 @@ namespace OnesComplement {
            "adc %3, %0\n"
            "adc %4, %0\n"
            "adc $0, %0\n"
-           : "+r" (rstate)
+           : "+&r" (rstate)
            : "rm" (b[0]),
              "rm" (b[1]),
              "rm" (b[2]),
