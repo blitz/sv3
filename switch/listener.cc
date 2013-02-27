@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/un.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include <listener.hh>
@@ -24,6 +25,8 @@ namespace Switch {
   void Listener::close_session(Session &session)
   {
     close(session._fd);
+    for (auto &r : session._regions)
+      munmap(r.mapping, r.size);
   }
 
   void Listener::accept_session()
@@ -45,6 +48,32 @@ namespace Switch {
     _sessions.push_back(new_s);
 
     // _sw.logf("Incoming connection. Client %d.", new_s._fd);
+  }
+
+  bool Listener::insert_region(Session &session, Region r)
+  {
+    _sw.logf("Client %u mapped %016llx+%llx to %p.", session._fd, r.addr, r.size, r.mapping);
+
+    // Overflow or empty region
+    if (r.addr + r.size <= r.addr) return false;
+
+    uint64_t r_end  = r .addr + r .size;
+    for (auto &lr : session._regions) {
+      uint64_t lr_end = lr.addr + lr.size;
+      if (r.addr < lr_end and lr.addr < r_end) {
+        _sw.logf("Incoming region [%016llx,%016llx] overlaps with [%016llx,%016llx]",
+                 r.addr,  r.addr  + r.size  - 1,
+                 lr.addr, lr.addr + lr.size - 1);
+        return false;
+      }
+    }
+
+    // Sorted insert
+    auto it = session._regions.begin();
+    for (; it != session._regions.end() and (*it).addr < r_end; ++it) {}
+    session._regions.insert(it, r);
+
+    return true;
   }
 
   ServerResponse Listener::handle_request(Session &session, ClientRequest &req)
@@ -75,6 +104,22 @@ namespace Switch {
 
       break;
     }
+    case ClientRequest::MEMORY_MAP: {
+      Region r = { req.memory_map.addr,
+                   req.memory_map.size,
+                   reinterpret_cast<uint8_t *>(mmap(nullptr, req.memory_map.size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                                                    req.memory_map.fd, req.memory_map.offset)) };
+      if (r.mapping == MAP_FAILED) {
+        char err[128];
+        strerror_r(errno, err, sizeof(err));
+        _sw.logf("Could not map shared memory: %d %s", errno, err);
+        resp.status.success = false;
+        break;
+      }
+
+      resp.status.success = insert_region(session, r);
+    }
+      break;
     default:
       resp.status.success = false;
       break;
@@ -85,7 +130,35 @@ namespace Switch {
 
   ServerResponse Listener::call(int fd, ClientRequest const &req)
   {
-    int res = send(fd, &req, sizeof(req), MSG_EOR | MSG_NOSIGNAL);
+    struct msghdr  hdr;
+    struct iovec   iov = { const_cast<ClientRequest *>(&req), sizeof(req) };
+    union {
+      struct cmsghdr chdr;
+      char           chdr_data[CMSG_SPACE(sizeof(int))];
+    };
+
+    hdr.msg_name    = NULL;
+    hdr.msg_namelen = 0;
+    hdr.msg_iov     = &iov;
+    hdr.msg_iovlen  = 1;
+    hdr.msg_flags   = 0;
+    
+    if (req.type != ClientRequest::MEMORY_MAP) {
+      // No file descriptor to pass
+      hdr.msg_control    = NULL;
+      hdr.msg_controllen = 0;
+    } else {
+      // Pass file descriptor
+      hdr.msg_control    = &chdr;
+      hdr.msg_controllen = CMSG_LEN(sizeof(int));
+      chdr.cmsg_len      = CMSG_LEN(sizeof(int));
+      chdr.cmsg_level    = SOL_SOCKET;
+      chdr.cmsg_type     = SCM_RIGHTS;
+
+      *reinterpret_cast<int *>(CMSG_DATA(&chdr)) = req.memory_map.fd;
+    }
+
+    int res = sendmsg(fd, &hdr, MSG_EOR | MSG_NOSIGNAL);
     if (res != sizeof(req))
       throw std::system_error(errno, std::system_category());
     
@@ -100,7 +173,22 @@ namespace Switch {
   bool Listener::poll(Session &session)
   {
     ClientRequest req;
-    int res = read(session._fd, &req, sizeof(req));
+    struct msghdr hdr;
+    struct iovec  iov = { &req, sizeof(req) };
+    union {
+      struct cmsghdr chdr;
+      char           chdr_data[CMSG_SPACE(sizeof(int))];
+    };
+
+    hdr.msg_name       = NULL;
+    hdr.msg_namelen    = 0;
+    hdr.msg_iov        = &iov;
+    hdr.msg_iovlen     = 1;
+    hdr.msg_flags      = 0;
+    hdr.msg_control    = &chdr;
+    hdr.msg_controllen = CMSG_SPACE(sizeof(int));
+
+    int res = recvmsg(session._fd, &hdr, 0);
     if (res < 0) {
       char err[128];
       strerror_r(errno, err, sizeof(err));
@@ -108,7 +196,7 @@ namespace Switch {
       goto do_close;
     }
 
-    // See
+    // Is our connection closed?
     if (res == 0) {
       // _sw.logf("Goodbye, client %u!", session._fd);
       goto do_close;
@@ -117,6 +205,20 @@ namespace Switch {
     if (res != sizeof(req)) {
       _sw.logf("Client %3d violated protocol. %u %zu", session._fd, res, sizeof(req));
       goto do_close;
+    }
+
+    {
+      cmsghdr *incoming_chdr = CMSG_FIRSTHDR(&hdr);
+      if (incoming_chdr) {
+        _sw.logf("Received file descriptor from client %d.", session._fd);
+        if (req.type == ClientRequest::MEMORY_MAP) {
+          req.memory_map.fd = *reinterpret_cast<int *>(CMSG_DATA(&chdr));
+        } else {
+          _sw.logf("... but we didn't expect one!\n");
+          close(*reinterpret_cast<int *>(CMSG_DATA(&chdr)));
+          goto do_close;
+        }
+      }
     }
 
     {

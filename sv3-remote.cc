@@ -3,6 +3,7 @@
 #include <listener.hh>
 #include <util.hh>
 #include <cstdio>
+#include <unistd.h>
 
 using namespace Switch;
 
@@ -45,7 +46,7 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
     }
 
-    ClientRequest  req;
+    ClientRequest req;
     req.type = ClientRequest::CREATE_PORT_TAP;
 
     if (sizeof(req.create_port_tap.buf) < strlen(argv[3])) {
@@ -54,6 +55,25 @@ int main(int argc, char **argv)
     }
 
     strncpy(req.create_port_tap.buf, argv[3], sizeof(req.create_port_tap.buf));
+
+    ServerResponse resp = Listener::call(fd, req);
+    printf("%s\n", resp.status.success ? "Success" : "Failure");
+
+    return 0;
+  }
+
+  if (strcmp(argv[2], "memmap") == 0) {
+    char templ[] = "/tmp/sv3-shmem-XXXXXX";
+    int tfd = mkstemp(templ);
+    if (tfd < 0)                                 { perror("mkstemp"); return EXIT_FAILURE; }
+    if ((off_t)-1 == lseek(tfd, 4096, SEEK_SET)) { perror("lseek"  ); return EXIT_FAILURE; }
+
+    ClientRequest req;
+    req.type = ClientRequest::MEMORY_MAP;
+    req.memory_map.addr   = 0;
+    req.memory_map.size   = 4096;
+    req.memory_map.fd     = tfd;
+    req.memory_map.offset = 0;
 
     ServerResponse resp = Listener::call(fd, req);
     printf("%s\n", resp.status.success ? "Success" : "Failure");
