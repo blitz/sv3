@@ -117,7 +117,7 @@ ts = host_env.Program('sv3-remote', ['sv3-remote.cc'] + common_objs)
 # Tests
 
 host_env.Program('test/checksums', ['test/checksums.cc'] + common_objs)
-Command('test/checksums.log', ['test/checksums'], '$SOURCE | tee $TARGET')
+Command('test/checksums.log', ['test/checksums'], '! $SOURCE | tee $TARGET | grep -q FAILED')
 
 host_env.Program('test/etherhash', ['test/etherhash.cc'] + common_objs)
 host_env.Command('test/etherhash.log', ['test/etherhash' ], '$SOURCE | tee $TARGET')

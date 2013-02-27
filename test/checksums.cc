@@ -88,6 +88,7 @@ int main()
                  f, i, start, first, second, checksum, data[i].checksum);
           ret = EXIT_FAILURE;
         }
+
       }
     }
 
@@ -110,7 +111,7 @@ int main()
     if (~lchecksum == 0) lchecksum = checksum;
 
     if (lchecksum != checksum) {
-      printf("f%02u: checksum fail!\n", f);
+      printf("f%02u: CHECKSUM FAILl!\n", f);
       ret = EXIT_FAILURE;
     }
   }
@@ -131,7 +132,7 @@ int main()
     if (~lchecksum == 0) lchecksum = checksum;
 
     if (lchecksum != checksum) {
-      printf("f%02u: checksum fail!\n", f);
+      printf("f%02u: CHECKSUM FAILl!\n", f);
       ret = EXIT_FAILURE;
     }
   }
