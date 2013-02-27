@@ -7,6 +7,19 @@
 
 using namespace Switch;
 
+int tempfile(size_t len)
+{
+  char templ[] = "/tmp/sv3-shmem-XXXXXX";
+  int tfd = mkstemp(templ);
+  if (tfd < 0)           return tfd;
+  if (0 > unlink(templ)) return -1;
+
+  if ((off_t)-1 == lseek(tfd, len, SEEK_SET))
+    return -1;
+
+  return tfd;
+}
+
 int main(int argc, char **argv)
 {
   int         fd;
@@ -63,15 +76,13 @@ int main(int argc, char **argv)
   }
 
   if (strcmp(argv[2], "memmap") == 0) {
-    char templ[] = "/tmp/sv3-shmem-XXXXXX";
-    int tfd = mkstemp(templ);
-    if (tfd < 0)                                 { perror("mkstemp"); return EXIT_FAILURE; }
-    if ((off_t)-1 == lseek(tfd, 4096, SEEK_SET)) { perror("lseek"  ); return EXIT_FAILURE; }
+    int tfd = tempfile(256 << 20);
+    if (tfd < 0) { perror("tempfile"); return EXIT_FAILURE; }
 
     ClientRequest req;
     req.type = ClientRequest::MEMORY_MAP;
     req.memory_map.addr   = 0;
-    req.memory_map.size   = 4096;
+    req.memory_map.size   = 256 << 20;
     req.memory_map.fd     = tfd;
     req.memory_map.offset = 0;
 
