@@ -90,6 +90,7 @@ conf.AddOptionalFlag('.c', 'LINKFLAGS', "-march=%s" % opt_cpu )
 
 conf.AddOptionalFlag('.c', 'CCFLAGS', '-Wall')
 #conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-Weffc++')
+conf.AddOptionalFlag('.c', 'CCFLAGS', '-ffunction-sections')
 
 host_env = conf.Finish()
 
@@ -104,25 +105,25 @@ host_pcap_env = conf.Finish()
 
 ## Switch library
 
-host_env.StaticLibrary('switch', Glob('switch/*.cc'))
+common_objs = [host_env.Object(f) for f in Glob('switch/*.cc')]
 
 ## Programs
-ts = host_env.Program('sv3', ['sv3.cc'], LIBS = ['switch'], LIBPATH = ['.'])
+ts = host_env.Program('sv3', ['sv3.cc'] + common_objs)
 # Clean leftover core files as well
 Clean(ts, Glob("core.*"))
 
-ts = host_env.Program('sv3-remote', ['sv3-remote.cc'], LIBS = ['switch'], LIBPATH = ['.'])
+ts = host_env.Program('sv3-remote', ['sv3-remote.cc'] + common_objs)
 
 # Tests
 
-host_env.Program('test/checksums', ['test/checksums.cc'])
+host_env.Program('test/checksums', ['test/checksums.cc'] + common_objs)
 Command('test/checksums.log', ['test/checksums'], '$SOURCE | tee $TARGET')
 
-host_env.Program('test/etherhash', ['test/etherhash.cc'])
+host_env.Program('test/etherhash', ['test/etherhash.cc'] + common_objs)
 host_env.Command('test/etherhash.log', ['test/etherhash' ], '$SOURCE | tee $TARGET')
 
 if pcap_is_available:
-    host_pcap_env.Program('test/packets', ['test/packets.cc'])
+    host_pcap_env.Program('test/packets', ['test/packets.cc'] + common_objs)
     Command('test/packets-ipv4-tcp.log', ['test/packets', 'test/data/ipv4-tcp.pcap' ], '! ${SOURCES[0]} ${SOURCES[1]} | tee $TARGET | grep -q wrong')
     Command('test/packets-ipv6-tcp.log', ['test/packets', 'test/data/ipv6-tcp.pcap' ], '! ${SOURCES[0]} ${SOURCES[1]} | tee $TARGET | grep -q wrong')
 else:
