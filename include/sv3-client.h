@@ -3,11 +3,13 @@
 #include <stdint.h>
 
 #define SV3_QUEUE_LENGTH 4096
+#define SV3_MAX_JOB_LEN  16     /* Maximum length of DMA program */
 
-#define SV3_DESC_INVAL  0
-#define SV3_DESC_DONE   1
-#define SV3_DESC_TX_CON 2
-#define SV3_DESC_TX_FIN 3
+#define SV3_DESC_INVAL   0
+#define SV3_DESC_RX_DONE 1
+#define SV3_DESC_TX_DONE 2
+#define SV3_DESC_TX_CON  3
+#define SV3_DESC_TX_FIN  4
 
 #define SV3_PACKED __attribute__((packed))
 
@@ -65,7 +67,7 @@ static inline bool sv3_queue_enqueue(struct Sv3Queue *q, struct Sv3Desc *d)
   if (sv3_queue_is_full(q)) return false;
 
   q->d[q->tail] = *d;
-  asm ("inc %0\n" : "+m" (q->tail) : "m" (q->d[q->tail]));
+  asm ("incw %0\n" : "+m" (q->tail) : "m" (q->d[q->tail]));
   return true;
 }
 
@@ -88,7 +90,7 @@ static inline bool sv3_queue_dequeue(struct Sv3Queue *q, struct Sv3Desc *d)
   if (sv3_queue_is_empty(q)) return false;
   
   *d = q->d[q->head];
-  asm ("inc %0\n" : "+m" (q->tail) : "m" (q->d[q->head]));
+  asm ("incw %0\n" : "+m" (q->tail) : "m" (q->d[q->head]));
   return true;
 }
 

@@ -7,15 +7,17 @@
 namespace Switch {
 
   class TapPort : public Port {
-    int             _fd;
-    unsigned        _header_size;
-    SinglePacketJob _sp;
-    uint8_t         _data[MAX_MTU];
+    static const size_t _buf_size = 2048;
+
+    int      _fd;
+    unsigned _header_size;
+
+    uint8_t *_buf;
 
   public:
 
-    virtual void receive(Port &src_port, PacketJob const &pj) override;
-    virtual PacketJob *poll() override;
+    virtual void receive(Port &src_port, Packet &p) override;
+    virtual bool poll(Packet &p) override;
 
 
     TapPort(Switch &sw, char const *devn);

@@ -78,7 +78,7 @@ int main(int argc, char **argv)
   }
 
   if (strcmp(argv[2], "memmap") == 0) {
-    const size_t mlen = 256 << 20;
+    const size_t mlen = 4 << 20;
     int tfd = tempfile(mlen);
     if (tfd < 0) { perror("tempfile"); return EXIT_FAILURE; }
     void *m = mmap(nullptr, mlen, PROT_READ | PROT_WRITE, MAP_SHARED, tfd, 0);
@@ -102,6 +102,8 @@ int main(int argc, char **argv)
     resp = Listener::call(fd, req);
     printf("reg: %s\n",  resp.status.success ? "Success" : "Failure");
 
+
+    
 
     return 0;
   }

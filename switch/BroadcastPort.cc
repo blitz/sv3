@@ -3,20 +3,18 @@
 
 namespace Switch {
 
-  void BroadcastPort::receive(Port &src_port, PacketJob const &pj)
+  void BroadcastPort::receive(Port &src_port, Packet &p)
   {
-    pj.do_packets([&](Packet const &p) {
-        for (Port *dst_port : _switch.ports()) {
-          if (dst_port != &src_port and
-              dst_port != this)
-            dst_port->receive(*this, SinglePacketJob(p));
-        }
-      });
+    for (Port *dst_port : _switch.ports()) {
+      if (dst_port != &src_port and
+          dst_port != this)
+        dst_port->receive(*this, p);
+    }
   }
 
-  PacketJob *BroadcastPort::poll()
+  bool BroadcastPort::poll(Packet &p)
   {
-    return nullptr;
+    return false;
   }
 
 }

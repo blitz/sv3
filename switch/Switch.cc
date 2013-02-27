@@ -17,7 +17,7 @@ namespace Switch {
 
   void Switch::loop()
   {
-    const unsigned ms       = 1000;
+    const unsigned ms = 1000;
     logf("Main loop entered. Polling every %ums.", ms);
 
     _loop_running = true;
@@ -27,11 +27,12 @@ namespace Switch {
 
       for (Port *src_port : ports) {
 
-        PacketJob *pj = src_port->poll();
-        if (pj == nullptr) continue;
-        logf("Polling port '%s' returned packet.", src_port->name());
+        Packet p;
+        if (not src_port->poll(p)) continue;
+        logf("Polling port '%s' returned %u byte packet.", src_port->name(),
+             p.packet_length);
 
-        auto &ehdr     = pj->ethernet_header();
+        auto &ehdr = p.ethernet_header();
         logf("Destination %s", ehdr.dst.to_str());
         logf("Source      %s", ehdr.src.to_str());
 
@@ -49,7 +50,9 @@ namespace Switch {
         }
 
         if (UNLIKELY(!dst_port)) dst_port = &_bcast_port;
-        dst_port->receive(*src_port, *pj);
+        dst_port->receive(*src_port, p);
+
+        p.callback(p);
       }
 
       MEMORY_BARRIER;

@@ -30,8 +30,8 @@ namespace Switch {
   public:
     char const *name() const { return _name; }
 
-    virtual void       receive(Port &src_port, PacketJob const &pj) = 0;
-    virtual PacketJob *poll() = 0;
+    virtual void receive(Port &src_port, Packet &p) = 0;
+    virtual bool poll(Packet &p) = 0;
 
     // Call this after the instance is completely constructed.
     void    enable();
@@ -44,8 +44,8 @@ namespace Switch {
   class BroadcastPort : public Port {
 
   public:
-    virtual void       receive(Port &src_port, PacketJob const &pj);
-    virtual PacketJob *poll   ();
+    virtual void receive(Port &src_port, Packet &p);
+    virtual bool poll(Packet &p);
 
     BroadcastPort(Switch &sw) : Port(sw, "broadcast") { }
   };

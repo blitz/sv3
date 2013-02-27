@@ -19,36 +19,44 @@
 
 namespace Switch {
 
-  void TapPort::receive(UNUSED Port &src_port, PacketJob const &pj)
+  void TapPort::receive(UNUSED Port &src_port, Packet &p)
   {
     struct iovec iov[Packet::MAX_FRAGMENTS];
-    pj.do_packets([&](Packet const &p) {
-        p.to_iovec(iov);
-        // XXX Write virtio header?
-        ssize_t r = writev(_fd, iov, p.fragments);
-        if (r < 0) {
-          throw std::system_error(errno, std::system_category());
-        }
-      });
+    p.to_iovec(iov);
 
+    // XXX Write virtio header?
+    ssize_t r = writev(_fd, iov, p.fragments);
+    if (r < 0) {
+      throw std::system_error(errno, std::system_category());
+    }
   }
 
-  PacketJob *TapPort::poll()
+  bool TapPort::poll(Packet &p)
   {
-    ssize_t r = read(_fd, _data, sizeof(_data));
+    if (not _buf)
+      _buf = new uint8_t[_buf_size];
+
+    ssize_t r = read(_fd, _buf, _buf_size);
     if (r < 0) {
-      if (errno == EWOULDBLOCK) return nullptr;
+      if (errno == EWOULDBLOCK) return false;
       throw std::system_error(errno, std::system_category());
     }
 
-    logf("Read %zd bytes.", r);
     assert(r > _header_size); 
-    _sp.from_buffer(_data + _header_size, r - _header_size);
-    return &_sp;
+
+    p.fragments          = 1;
+    p.fragment[0]        = reinterpret_cast<uint8_t *>(_buf) + _header_size;
+    p.fragment_length[0] = r - _header_size;
+    p.packet_length      = r - _header_size;
+
+    _buf = nullptr;
+    p.callback = [=](Packet &p) { delete[] (p.fragment[0] - _header_size); };
+
+    return true;
   }
 
   TapPort::TapPort(Switch &sw, char const *dev)
-    : Port(sw, dev), _data()
+    : Port(sw, dev), _buf(nullptr)
   {
     _fd = open(dev, O_RDWR | O_NONBLOCK);
     if (_fd < 0)
