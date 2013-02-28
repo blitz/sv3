@@ -1,5 +1,9 @@
 -*- Mode: Org -*-
 
+* Security
+
+  Switch will segfault if passed file descriptors point to files that are too short. 
+
 * IPv6
 
   L4 checksums are wrong in the presence of option headers.

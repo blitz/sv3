@@ -90,7 +90,7 @@ static inline bool sv3_queue_dequeue(struct Sv3Queue *q, struct Sv3Desc *d)
   if (sv3_queue_is_empty(q)) return false;
   
   *d = q->d[q->head];
-  asm ("incw %0\n" : "+m" (q->tail) : "m" (q->d[q->head]));
+  asm ("incw %0\n" : "+m" (q->head) : "m" (q->d[q->head]));
   return true;
 }
 

@@ -28,6 +28,7 @@ namespace Switch {
         break;
     }
 
+    d.len  = p.packet_length;
     d.type = SV3_DESC_RX_DONE;
     sv3_queue_enqueue(&_qp->done, &d);
   }
@@ -50,7 +51,7 @@ namespace Switch {
       if (d.type == SV3_DESC_TX_FIN)
         break;
 
-      // assert(d.type == SV3_DESC_TX_CON);
+      assert(d.type == SV3_DESC_TX_CON);
     }
 
     if (d.type == SV3_DESC_TX_CON)

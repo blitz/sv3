@@ -16,7 +16,7 @@ int tempfile(size_t len)
   if (tfd < 0)           return tfd;
   if (0 > unlink(templ)) return -1;
 
-  if ((off_t)-1 == lseek(tfd, len, SEEK_SET))
+  if (0 != ftruncate(tfd, len))
     return -1;
 
   return tfd;
@@ -102,8 +102,22 @@ int main(int argc, char **argv)
     resp = Listener::call(fd, req);
     printf("reg: %s\n",  resp.status.success ? "Success" : "Failure");
 
+    Sv3Desc d;
+    d.buf_ptr = reinterpret_cast<uintptr_t>(pmem);
+    d.len     = 2048;
+    sv3_queue_enqueue(&qp->rx, &d);
 
-    
+    do {
+      if (sv3_queue_dequeue(&qp->done, &d)) {
+        printf("done: tail %x head %x\n", qp->done.tail, qp->done.head);
+        printf("rx:   tail %x head %x\n", qp->rx.tail, qp->rx.head);
+        printf("Got packet %u.\n", d.len);
+
+        d.len = 2048;
+        sv3_queue_enqueue(&qp->rx, &d);
+      }
+      usleep(1000);
+    } while (true);
 
     return 0;
   }

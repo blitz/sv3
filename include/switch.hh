@@ -71,8 +71,6 @@ namespace Switch {
     // Broadcast traffic goes here.
     BroadcastPort    _bcast_port;
 
-    void logf(char const *str, ...);
-
     // Wait until one loop iteration has passed. This is a no-op, if
     // the main loop is not running.
     void wait_loop_iteration();
@@ -83,6 +81,8 @@ namespace Switch {
   public:
 
     std::list<Port *> const &ports() const { return *_ports; }
+
+    void logf(char const *str, ...);
 
     void loop();
     void attach_port(Port &p);
