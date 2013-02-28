@@ -34,9 +34,13 @@ struct SV3_PACKED Sv3Queue {
 };
 
 struct SV3_PACKED Sv3QueuePair {
+  /* Set to true if client is blocked. */
+  uint8_t  blocked;
+
   Sv3Queue tx;
   Sv3Queue rx;
   Sv3Queue done;
+
 };
 
 static inline bool sv3_queue_is_full(struct Sv3Queue *q)

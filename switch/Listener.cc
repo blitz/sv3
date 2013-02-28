@@ -131,6 +131,10 @@ namespace Switch {
       p->enable();
     };
       break;
+    case ClientRequest::EVENT_FD:
+      if (session._event_fd) close(session._event_fd);
+      session._event_fd = req.event_fd.fd;
+      break;
     default:
       resp.status.success = false;
       break;
@@ -154,11 +158,8 @@ namespace Switch {
     hdr.msg_iovlen  = 1;
     hdr.msg_flags   = 0;
     
-    if (req.type != ClientRequest::MEMORY_MAP) {
-      // No file descriptor to pass
-      hdr.msg_control    = NULL;
-      hdr.msg_controllen = 0;
-    } else {
+    if (req.type == ClientRequest::MEMORY_MAP or
+        req.type == ClientRequest::EVENT_FD) {
       // Pass file descriptor
       hdr.msg_control    = &chdr;
       hdr.msg_controllen = CMSG_LEN(sizeof(int));
@@ -166,7 +167,12 @@ namespace Switch {
       chdr.cmsg_level    = SOL_SOCKET;
       chdr.cmsg_type     = SCM_RIGHTS;
 
+      assert ( &req.memory_map.fd == &req.event_fd.fd );
       *reinterpret_cast<int *>(CMSG_DATA(&chdr)) = req.memory_map.fd;
+    } else {
+      // No file descriptor to pass
+      hdr.msg_control    = NULL;
+      hdr.msg_controllen = 0;
     }
 
     int res = sendmsg(fd, &hdr, MSG_EOR | MSG_NOSIGNAL);
@@ -222,7 +228,8 @@ namespace Switch {
       cmsghdr *incoming_chdr = CMSG_FIRSTHDR(&hdr);
       if (incoming_chdr) {
         _sw.logf("Received file descriptor from client %d.", session._fd);
-        if (req.type == ClientRequest::MEMORY_MAP) {
+        if (req.type == ClientRequest::MEMORY_MAP or
+            req.type == ClientRequest::EVENT_FD) {
           req.memory_map.fd = *reinterpret_cast<int *>(CMSG_DATA(&chdr));
         } else {
           _sw.logf("... but we didn't expect one!\n");

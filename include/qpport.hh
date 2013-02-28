@@ -13,6 +13,9 @@ namespace Switch {
     Session      &_session;
     Sv3QueuePair *_qp;
 
+    // Trigger the clients event fd, if necessary.
+    void notify();
+
   public:
 
     virtual void receive(Port &src_port, Packet &p) override;

@@ -18,6 +18,7 @@ namespace Switch {
       CREATE_PORT_TAP,
       MEMORY_MAP,
       CREATE_PORT_QP,
+      EVENT_FD,
     } type;
 
     union {
@@ -28,15 +29,19 @@ namespace Switch {
         char buf[32];
       } create_port_tap;
       struct {
+        int      fd;
+
         uint64_t addr;
         uint64_t size;
-
-        int      fd;
         off_t    offset;
       } memory_map;
       struct {
         uint64_t qp;            // pointer
       } create_port_qp;
+      struct {
+        // fd needs to be at same offset as in memory_map
+        int fd;
+      } event_fd;
     };
   };
 
@@ -63,6 +68,7 @@ namespace Switch {
 
   struct Session {
     int          _fd;
+    int          _event_fd;
     sockaddr_un  _sa;
 
     std::list<Region> _regions;
@@ -81,6 +87,8 @@ namespace Switch {
 
       return nullptr;
     }
+
+    Session() : _event_fd(0), _regions(), _ports() { }
   };
 
 

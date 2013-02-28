@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/eventfd.h>
 #include <sv3-client.h>
 
 using namespace Switch;
@@ -84,15 +85,26 @@ int main(int argc, char **argv)
     void *m = mmap(nullptr, mlen, PROT_READ | PROT_WRITE, MAP_SHARED, tfd, 0);
     if (m == MAP_FAILED) { perror("mmap"); return EXIT_FAILURE; }
 
-    ClientRequest req;
+    int efd = eventfd(0, 0);
+    if (efd < 0) { perror("eventfd"); return EXIT_FAILURE; }
+
+    ClientRequest  req;
+    ServerResponse resp;
+    req.type = ClientRequest::EVENT_FD;
+    req.event_fd.fd = efd;
+    resp = Listener::call(fd, req);
+    printf("efd: %s\n", resp.status.success ? "Success" : "Failure");
+    if (not resp.status.success) return EXIT_FAILURE;
+
     req.type = ClientRequest::MEMORY_MAP;
     req.memory_map.addr   = reinterpret_cast<uintptr_t>(m);
     req.memory_map.size   = 256 << 20;
     req.memory_map.fd     = tfd;
     req.memory_map.offset = 0;
 
-    ServerResponse resp = Listener::call(fd, req);
+    resp = Listener::call(fd, req);
     printf("map: %s\n", resp.status.success ? "Success" : "Failure");
+    if (not resp.status.success) return EXIT_FAILURE;
 
     Sv3QueuePair *qp   = reinterpret_cast<Sv3QueuePair *>(m);
     uint8_t      *pmem = reinterpret_cast<uint8_t *>(m) + sizeof(Sv3QueuePair);
@@ -108,7 +120,7 @@ int main(int argc, char **argv)
     sv3_queue_enqueue(&qp->rx, &d);
 
     do {
-      if (sv3_queue_dequeue(&qp->done, &d)) {
+      while (sv3_queue_dequeue(&qp->done, &d)) {
         printf("done: tail %x head %x\n", qp->done.tail, qp->done.head);
         printf("rx:   tail %x head %x\n", qp->rx.tail, qp->rx.head);
         printf("Got packet %u.\n", d.len);
@@ -116,7 +128,14 @@ int main(int argc, char **argv)
         d.len = 2048;
         sv3_queue_enqueue(&qp->rx, &d);
       }
-      usleep(1000);
+
+      qp->blocked = 1;
+      asm ("" ::: "memory");
+      uint64_t d;
+      if (sizeof(d) != read(efd, &d, sizeof(d))) {
+        perror("read");
+        return EXIT_FAILURE;
+      }
     } while (true);
 
     return 0;
