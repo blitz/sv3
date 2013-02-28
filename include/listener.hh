@@ -9,55 +9,10 @@
 
 #include <switch.hh>
 
+#include <sv3-client.h>
+#include <sv3-messages.h>
 
 namespace Switch {
-
-  struct ClientRequest {
-    enum {
-      PING,
-      CREATE_PORT_TAP,
-      MEMORY_MAP,
-      CREATE_PORT_QP,
-      EVENT_FD,
-    } type;
-
-    union {
-      struct {
-        // nothing...
-      } ping;
-      struct {
-        char buf[32];
-      } create_port_tap;
-      struct {
-        int      fd;
-
-        uint64_t addr;
-        uint64_t size;
-        off_t    offset;
-      } memory_map;
-      struct {
-        uint64_t qp;            // pointer
-      } create_port_qp;
-      struct {
-        // fd needs to be at same offset as in memory_map
-        int fd;
-      } event_fd;
-    };
-  };
-
-  struct ServerResponse {
-    enum {
-      STATUS,
-      PONG,
-    } type;
-    union {
-      struct {
-        bool success;
-      } status;
-      struct {
-      } pong;
-    };
-  };
 
   struct Region {
     uint64_t addr;
@@ -109,13 +64,13 @@ namespace Switch {
     bool poll(Session &session);
     bool insert_region(Session &session, Region r);
 
-    ServerResponse handle_request(Session &session, ClientRequest &req);
+    Sv3Response handle_request(Session &session, Sv3Request &req);
 
   public:
 
     // Pass a request over the given fd, which should be connected to
     // the switch instance.
-    static ServerResponse call(int fd, ClientRequest const &req);
+    static Sv3Response call(int fd, Sv3Request const &req);
 
     Listener(Switch &sw);
     ~Listener();

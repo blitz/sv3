@@ -27,11 +27,13 @@ namespace Switch {
   {
     close(session._fd);
 
+
     for (auto &p : session._ports)
       delete p;
 
     for (auto &r : session._regions)
       munmap(r.mapping, r.size);
+
   }
 
   void Listener::accept_session()
@@ -81,17 +83,17 @@ namespace Switch {
     return true;
   }
 
-  ServerResponse Listener::handle_request(Session &session, ClientRequest &req)
+  Sv3Response Listener::handle_request(Session &session, Sv3Request &req)
   {
-    ServerResponse resp;
+    Sv3Response resp;
     memset(&resp, 0, sizeof(resp));
-    resp.type = ServerResponse::STATUS;
+    resp.type = Sv3Response::STATUS;
     resp.status.success = true;
 
     switch (req.type) {
-    case ClientRequest::PING:
+    case Sv3Request::PING:
       break;
-    case ClientRequest::CREATE_PORT_TAP: {
+    case Sv3Request::CREATE_PORT_TAP: {
       char name[sizeof(req.create_port_tap.buf) + 1];
       name[sizeof(req.create_port_tap.buf)] = 0;
       strncpy(name, req.create_port_tap.buf, sizeof(name));
@@ -108,7 +110,7 @@ namespace Switch {
 
       break;
     }
-    case ClientRequest::MEMORY_MAP: {
+    case Sv3Request::MEMORY_MAP: {
       Region r = { req.memory_map.addr,
                    req.memory_map.size,
                    reinterpret_cast<uint8_t *>(mmap(nullptr, req.memory_map.size, PROT_READ | PROT_WRITE, MAP_SHARED,
@@ -124,14 +126,14 @@ namespace Switch {
       resp.status.success = insert_region(session, r);
       break;
     }
-    case ClientRequest::CREATE_PORT_QP: {
+    case Sv3Request::CREATE_PORT_QP: {
       char buf[32];
       snprintf(buf, 32, "c%d qp", session._fd);
       Port *p = new QpPort(_sw, buf, session, req.create_port_qp.qp);
       p->enable();
     };
       break;
-    case ClientRequest::EVENT_FD:
+    case Sv3Request::EVENT_FD:
       if (session._event_fd) close(session._event_fd);
       session._event_fd = req.event_fd.fd;
       break;
@@ -143,45 +145,11 @@ namespace Switch {
     return resp;
   }
 
-  ServerResponse Listener::call(int fd, ClientRequest const &req)
+  Sv3Response Listener::call(int fd, Sv3Request const &req)
   {
-    struct msghdr  hdr;
-    struct iovec   iov = { const_cast<ClientRequest *>(&req), sizeof(req) };
-    union {
-      struct cmsghdr chdr;
-      char           chdr_data[CMSG_SPACE(sizeof(int))];
-    };
+    Sv3Response resp;
 
-    hdr.msg_name    = NULL;
-    hdr.msg_namelen = 0;
-    hdr.msg_iov     = &iov;
-    hdr.msg_iovlen  = 1;
-    hdr.msg_flags   = 0;
-    
-    if (req.type == ClientRequest::MEMORY_MAP or
-        req.type == ClientRequest::EVENT_FD) {
-      // Pass file descriptor
-      hdr.msg_control    = &chdr;
-      hdr.msg_controllen = CMSG_LEN(sizeof(int));
-      chdr.cmsg_len      = CMSG_LEN(sizeof(int));
-      chdr.cmsg_level    = SOL_SOCKET;
-      chdr.cmsg_type     = SCM_RIGHTS;
-
-      assert ( &req.memory_map.fd == &req.event_fd.fd );
-      *reinterpret_cast<int *>(CMSG_DATA(&chdr)) = req.memory_map.fd;
-    } else {
-      // No file descriptor to pass
-      hdr.msg_control    = NULL;
-      hdr.msg_controllen = 0;
-    }
-
-    int res = sendmsg(fd, &hdr, MSG_EOR | MSG_NOSIGNAL);
-    if (res != sizeof(req))
-      throw std::system_error(errno, std::system_category());
-    
-    ServerResponse resp;
-    res = recv(fd, &resp, sizeof(resp), 0);
-    if (res != sizeof(resp))
+    if (0 != sv3_call(fd, const_cast<Sv3Request *>(&req), &resp))
       throw std::system_error(errno, std::system_category());
 
     return resp;
@@ -189,7 +157,7 @@ namespace Switch {
 
   bool Listener::poll(Session &session)
   {
-    ClientRequest req;
+    Sv3Request    req;
     struct msghdr hdr;
     struct iovec  iov = { &req, sizeof(req) };
     union {
@@ -228,8 +196,8 @@ namespace Switch {
       cmsghdr *incoming_chdr = CMSG_FIRSTHDR(&hdr);
       if (incoming_chdr) {
         _sw.logf("Received file descriptor from client %d.", session._fd);
-        if (req.type == ClientRequest::MEMORY_MAP or
-            req.type == ClientRequest::EVENT_FD) {
+        if (req.type == Sv3Request::MEMORY_MAP or
+            req.type == Sv3Request::EVENT_FD) {
           req.memory_map.fd = *reinterpret_cast<int *>(CMSG_DATA(&chdr));
         } else {
           _sw.logf("... but we didn't expect one!\n");
@@ -240,7 +208,7 @@ namespace Switch {
     }
 
     {
-      ServerResponse resp = handle_request(session, req);
+      Sv3Response resp = handle_request(session, req);
       res = send(session._fd, &resp, sizeof(resp), MSG_EOR | MSG_NOSIGNAL);
       if (res != sizeof(resp)) {
         char err[128];

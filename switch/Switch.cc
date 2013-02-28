@@ -17,7 +17,7 @@ namespace Switch {
 
   void Switch::loop()
   {
-    const unsigned ms = 1000;
+    const unsigned ms = 10;
     logf("Main loop entered. Polling every %ums.", ms);
 
     _loop_running = true;
@@ -29,22 +29,22 @@ namespace Switch {
 
         Packet p;
         if (not src_port->poll(p)) continue;
-        logf("Polling port '%s' returned %u byte packet.", src_port->name(),
-             p.packet_length);
+        // logf("Polling port '%s' returned %u byte packet.", src_port->name(),
+        //      p.packet_length);
 
         auto &ehdr = p.ethernet_header();
-        logf("Destination %s", ehdr.dst.to_str());
-        logf("Source      %s", ehdr.src.to_str());
+        // logf("Destination %s", ehdr.dst.to_str());
+        // logf("Source      %s", ehdr.src.to_str());
 
         Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? mac_cache[ehdr.dst] : nullptr;
         assert(dst_port != src_port and
                dst_port != &_bcast_port);
 
-        if (not (src_port == &_bcast_port or ehdr.src.is_multicast())) {
-          if (mac_cache[ehdr.src] != src_port)
-            logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
-                 Ethernet::hash(ehdr.src),
-                 src_port->name());
+        if (LIKELY(not (src_port == &_bcast_port or ehdr.src.is_multicast()))) {
+          // if (mac_cache[ehdr.src] != src_port)
+          //   logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
+          //        Ethernet::hash(ehdr.src),
+          //        src_port->name());
 
           mac_cache.add(ehdr.src, src_port);
         }
