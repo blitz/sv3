@@ -7,8 +7,10 @@ Usage: scons [force32=0/1] [cxx=COMPILER] [cpu=CPU]
 
 force32=0/1   Force 32-bit build, if force32=1. Default is 0.
 debug=0/1     Build a debug version, if debug=1. Default is 0.
-cxx=COMPILER  Force build to use a specific C++ compiler
-cpu=CPU       Optimize for the given CPU. Passed to -march=
+cxx=COMPILER  Force build to use a specific C++ compiler.
+cpu=CPU       Optimize for the given CPU. Passed to -march.
+lto=0/1       Enable link-time optimization. Default is 0.
+asserts=1/0   Enable assertions at runtime. Default is 1.
 """)
 
 
@@ -51,22 +53,30 @@ if 'cxx' in ARGUMENTS:
     print("Forcing host C++ compiler to %s." % ARGUMENTS['cxx'])
     host_env['CXX'] = ARGUMENTS['cxx']
 
+
+optflags = []
 if int(ARGUMENTS.get('debug', 1)):
-    host_env.Append(CCFLAGS   = ['-O1', '-g'],
-                    LINKFLAGS = ['-g'])
+    optflags += ['-O1', '-g']
 else:
-    host_env.Append(CCFLAGS   = ['-O3'])
+    optflags += ['-O3']
 
 if int(ARGUMENTS.get('force32', 0)):
-    host_env.Append(CCFLAGS = ['-m32'],
-                    LINKFLAGS = ['-m32'])
+    optflags += ['-m32']
+
+if int(ARGUMENTS.get('lto', 0)):
+    optflags += ['-flto']
+
+if int(ARGUMENTS.get('asserts', 1)) == 0:
+    host_env.Append(CPPFLAGS = ['-DNDEBUG'])
+
+host_env.Append(CCFLAGS = optflags, LINKFLAGS = optflags)
 
 conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag ,
                                             'CheckPreprocessorMacro' : CheckPreprocessorMacro,
                                             })
 
 if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
-    conf.env.Append(CCFLAGS = ['-DNO_GETVNETHDRSZ'])
+    conf.env.Append(CPPFLAGS = ['-DNO_GETVNETHDRSZ'])
 
 if not conf.CheckType('struct virtio_net_hdr', '#include <linux/virtio_net.h>\n'):
     print("Your Linux headers are too old.")
