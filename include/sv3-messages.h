@@ -138,10 +138,9 @@ static inline int sv3_call_eventfd(int fd, int efd)
   req.event_fd.fd = efd ? efd : eventfd(0, 0);
   if (req.event_fd.fd < 0) return -1;
 
-  if (sv3_call(fd, &req, &resp) != 0) goto close_fd;
-  return req.event_fd.fd;
+  if (sv3_call(fd, &req, &resp) == 0)
+    return req.event_fd.fd;
 
- close_fd:
   if (efd == 0) close(req.event_fd.fd);
   return -1;
 }
