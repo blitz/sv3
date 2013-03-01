@@ -259,7 +259,7 @@ namespace Switch {
 
     _local_addr.sun_family = AF_LOCAL;
     snprintf(_local_addr.sun_path, sizeof(_local_addr.sun_path),
-             "/tmp/switch-%u", getpid());
+             "/tmp/sv3" /* "-%u", getpid() */);
 
     _sw.logf("Listening for clients on %s.", _local_addr.sun_path);
 
