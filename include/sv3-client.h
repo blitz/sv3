@@ -20,18 +20,19 @@ struct SV3_PACKED Sv3Desc {
   uint16_t _dummy;
 };
 
+typedef struct Sv3Desc Sv3Desc;
+
 struct SV3_PACKED Sv3Queue {
   Sv3Desc d[SV3_QUEUE_LENGTH];
   
-  union {
-    struct {
-      uint16_t head;
-      uint16_t tail;
-    };
-    /* For alignment */
-    Sv3Desc _dummy;
-  };
+  uint16_t head;
+  uint16_t tail;
+
+  /* For alignment */
+  uint32_t _dummy;
 };
+
+typedef struct Sv3Queue Sv3Queue;
 
 struct SV3_PACKED Sv3QueuePair {
   /* Set to true if client is blocked. */
@@ -42,6 +43,8 @@ struct SV3_PACKED Sv3QueuePair {
   Sv3Queue done;
 
 };
+
+typedef struct Sv3QueuePair Sv3QueuePair;
 
 static inline bool sv3_queue_is_full(struct Sv3Queue *q)
 {

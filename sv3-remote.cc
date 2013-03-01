@@ -29,7 +29,7 @@ int main(int argc, char **argv)
 
   if (strcmp(argv[2], "pingpong") == 0) {
     Sv3Request  req;
-    req.type = Sv3Request::PING;
+    req.type = SV3_REQ_PING;
 
     const unsigned rounds = 1024;
     uint64_t start = rdtsc();
@@ -49,7 +49,7 @@ int main(int argc, char **argv)
     }
 
     Sv3Request req;
-    req.type = Sv3Request::CREATE_PORT_TAP;
+    req.type = SV3_REQ_CREATE_PORT_TAP;
 
     if (sizeof(req.create_port_tap.buf) < strlen(argv[3])) {
       fprintf(stderr, "Your filename is too long.\n");
@@ -76,13 +76,13 @@ int main(int argc, char **argv)
 
     Sv3Request  req;
     Sv3Response resp;
-    req.type = Sv3Request::EVENT_FD;
+    req.type = SV3_REQ_EVENT_FD;
     req.event_fd.fd = efd;
     resp = Listener::call(fd, req);
     printf("efd: %s\n", resp.status.success ? "Success" : "Failure");
     if (not resp.status.success) return EXIT_FAILURE;
 
-    req.type = Sv3Request::MEMORY_MAP;
+    req.type = SV3_REQ_MEMORY_MAP;
     req.memory_map.addr   = reinterpret_cast<uintptr_t>(m);
     req.memory_map.size   = 256 << 20;
     req.memory_map.fd     = tfd;
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
     Sv3QueuePair *qp   = reinterpret_cast<Sv3QueuePair *>(m);
     uint8_t      *pmem = reinterpret_cast<uint8_t *>(m) + sizeof(Sv3QueuePair);
 
-    req.type = Sv3Request::CREATE_PORT_QP;
+    req.type = SV3_REQ_CREATE_PORT_QP;
     req.create_port_qp.qp = reinterpret_cast<uintptr_t>(qp);
     resp = Listener::call(fd, req);
     printf("reg: %s\n",  resp.status.success ? "Success" : "Failure");

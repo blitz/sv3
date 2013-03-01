@@ -87,13 +87,13 @@ namespace Switch {
   {
     Sv3Response resp;
     memset(&resp, 0, sizeof(resp));
-    resp.type = Sv3Response::STATUS;
+    resp.type = SV3_RESP_STATUS;
     resp.status.success = true;
 
     switch (req.type) {
-    case Sv3Request::PING:
+    case SV3_REQ_PING:
       break;
-    case Sv3Request::CREATE_PORT_TAP: {
+    case SV3_REQ_CREATE_PORT_TAP: {
       char name[sizeof(req.create_port_tap.buf) + 1];
       name[sizeof(req.create_port_tap.buf)] = 0;
       strncpy(name, req.create_port_tap.buf, sizeof(name));
@@ -110,7 +110,7 @@ namespace Switch {
 
       break;
     }
-    case Sv3Request::MEMORY_MAP: {
+    case SV3_REQ_MEMORY_MAP: {
       Region r = { req.memory_map.addr,
                    req.memory_map.size,
                    reinterpret_cast<uint8_t *>(mmap(nullptr, req.memory_map.size, PROT_READ | PROT_WRITE, MAP_SHARED,
@@ -126,14 +126,14 @@ namespace Switch {
       resp.status.success = insert_region(session, r);
       break;
     }
-    case Sv3Request::CREATE_PORT_QP: {
+    case SV3_REQ_CREATE_PORT_QP: {
       char buf[32];
       snprintf(buf, 32, "c%d qp", session._fd);
       Port *p = new QpPort(_sw, buf, session, req.create_port_qp.qp);
       p->enable();
     };
       break;
-    case Sv3Request::EVENT_FD:
+    case SV3_REQ_EVENT_FD:
       if (session._event_fd) close(session._event_fd);
       session._event_fd = req.event_fd.fd;
       break;
@@ -196,8 +196,8 @@ namespace Switch {
       cmsghdr *incoming_chdr = CMSG_FIRSTHDR(&hdr);
       if (incoming_chdr) {
         _sw.logf("Received file descriptor from client %d.", session._fd);
-        if (req.type == Sv3Request::MEMORY_MAP or
-            req.type == Sv3Request::EVENT_FD) {
+        if (req.type == SV3_REQ_MEMORY_MAP or
+            req.type == SV3_REQ_EVENT_FD) {
           req.memory_map.fd = *reinterpret_cast<int *>(CMSG_DATA(&chdr));
         } else {
           _sw.logf("... but we didn't expect one!\n");
