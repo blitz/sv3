@@ -12,20 +12,10 @@ using namespace Switch;
 int main(int argc, char **argv)
 {
   int         fd;
-  sockaddr_un sa;
 
   if (argc < 3) goto usage;
 
-  fd = socket(AF_LOCAL, SOCK_SEQPACKET, 0);
-  if (fd < 0) { perror("socket"); return EXIT_FAILURE; }
-
-  sa.sun_family = AF_LOCAL;
-  strncpy(sa.sun_path, argv[1], sizeof(sa.sun_path));
-  if (0 > connect(fd, reinterpret_cast<sockaddr *>(&sa), sizeof(sa))) {
-    perror("connect");
-    return EXIT_FAILURE;
-  }
-
+  fd = sv3_connect(argv[1]);
 
   if (strcmp(argv[2], "pingpong") == 0) {
     Sv3Request  req;
@@ -65,22 +55,17 @@ int main(int argc, char **argv)
   }
 
   if (strcmp(argv[2], "memmap") == 0) {
+    Sv3Request  req;
+    Sv3Response resp;
+
     const size_t mlen = 4 << 20;
     int tfd = sv3_memory(mlen);
     if (tfd < 0) { perror("tempfile"); return EXIT_FAILURE; }
     void *m = mmap(nullptr, mlen, PROT_READ | PROT_WRITE, MAP_SHARED, tfd, 0);
     if (m == MAP_FAILED) { perror("mmap"); return EXIT_FAILURE; }
 
-    int efd = eventfd(0, 0);
+    int efd = sv3_call_eventfd(fd, 0);
     if (efd < 0) { perror("eventfd"); return EXIT_FAILURE; }
-
-    Sv3Request  req;
-    Sv3Response resp;
-    req.type = SV3_REQ_EVENT_FD;
-    req.event_fd.fd = efd;
-    resp = Listener::call(fd, req);
-    printf("efd: %s\n", resp.status.success ? "Success" : "Failure");
-    if (not resp.status.success) return EXIT_FAILURE;
 
     req.type = SV3_REQ_MEMORY_MAP;
     req.memory_map.addr   = reinterpret_cast<uintptr_t>(m);
