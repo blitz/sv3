@@ -46,17 +46,17 @@ struct SV3_PACKED Sv3QueuePair {
 
 typedef struct Sv3QueuePair Sv3QueuePair;
 
-static inline bool sv3_queue_is_full(struct Sv3Queue *q)
+static inline bool sv3_queue_is_full(Sv3Queue *q)
 {
   return (((q->tail + 1) & (SV3_QUEUE_LENGTH - 1)) == q->head);
 }
 
-static inline bool sv3_queue_is_empty(struct Sv3Queue *q)
+static inline bool sv3_queue_is_empty(Sv3Queue *q)
 {
   return q->tail == q->head;
 }
 
-static inline unsigned sv3_queue_room(struct Sv3Queue *q)
+static inline unsigned sv3_queue_room(Sv3Queue *q)
 {
   unsigned head = q->head;
   unsigned tail = q->tail;
@@ -69,7 +69,7 @@ static inline unsigned sv3_queue_room(struct Sv3Queue *q)
   return ((tail >= head) ? SV3_QUEUE_LENGTH : 0) - tail + head - 1;
 }
 
-static inline bool sv3_queue_enqueue(struct Sv3Queue *q, struct Sv3Desc *d)
+static inline bool sv3_queue_enqueue(Sv3Queue *q, Sv3Desc *d)
 {
   if (sv3_queue_is_full(q)) return false;
 
@@ -78,7 +78,7 @@ static inline bool sv3_queue_enqueue(struct Sv3Queue *q, struct Sv3Desc *d)
   return true;
 }
 
-static inline bool sv3_queue_enqueue_multi(struct Sv3Queue *q, struct Sv3Desc *d, unsigned n)
+static inline bool sv3_queue_enqueue_multi(Sv3Queue *q, Sv3Desc *d, unsigned n)
 {
   unsigned tail = q->tail;
   if (sv3_queue_room(q) < n)
@@ -92,7 +92,7 @@ static inline bool sv3_queue_enqueue_multi(struct Sv3Queue *q, struct Sv3Desc *d
   return true;
 }
 
-static inline bool sv3_queue_dequeue(struct Sv3Queue *q, struct Sv3Desc *d)
+static inline bool sv3_queue_dequeue(Sv3Queue *q, Sv3Desc *d)
 {
   if (sv3_queue_is_empty(q)) return false;
   
