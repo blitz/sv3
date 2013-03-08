@@ -263,6 +263,10 @@ namespace Switch {
 
     _sw.logf("Listening for clients on %s.", _local_addr.sun_path);
 
+    const int reuse = 1;
+    if (0 != setsockopt(_sfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)))
+      throw std::system_error(errno, std::system_category());
+
     if (0 != bind(_sfd, reinterpret_cast<sockaddr *>(&_local_addr), sizeof(_local_addr)))
       throw std::system_error(errno, std::system_category());
 
