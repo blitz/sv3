@@ -90,6 +90,12 @@ if not conf.CheckCXXHeader('list'):
     print("C++ STL seems broken.")
     Exit(1)
 
+if not conf.CheckCHeader('linux/virtio_net.h'):
+    print("linux/virtio_net.h does not compile! Trying again with ugly workaround...")
+    conf.env.Append(CPPFLAGS = ['-Du16=__u16'])
+    if not conf.CheckCHeader('linux/virtio_net.h'):
+        Exit(1)
+
 if not 'cpu' in ARGUMENTS:
     opt_cpu = 'corei7'
 else:
