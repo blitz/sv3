@@ -46,7 +46,7 @@ namespace Switch {
       throw std::system_error(errno, std::system_category());
     }
 
-    assert(r > _header_size); 
+    assert(size_t(r) > _header_size);
 
     p.fragments          = 1;
     p.fragment[0]        = reinterpret_cast<uint8_t *>(_buf) + _header_size;

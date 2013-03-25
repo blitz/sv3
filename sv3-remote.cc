@@ -27,7 +27,7 @@ int main(int argc, char **argv)
       Listener::call(fd, req);
     uint64_t end = rdtsc();
 
-    printf("%lu cycles per roundtrip\n", (end - start) / rounds);
+    printf("%lu cycles per roundtrip\n", (unsigned long)((end - start) / rounds));
 
     return 0;
   }
