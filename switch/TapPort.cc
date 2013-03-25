@@ -8,7 +8,11 @@
 #include <sys/ioctl.h>
 #include <linux/if_tun.h>
 
+// virtio_net_ctrl_hdr defines a member 'class'. We need to workaround
+// that.
 #define class _class
+
+#include <pci/types.h>          // needed to make virtio_net happy
 #include <linux/virtio_net.h>
 #undef class
 

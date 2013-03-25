@@ -78,7 +78,7 @@ conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag 
 if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
     conf.env.Append(CPPFLAGS = ['-DNO_GETVNETHDRSZ'])
 
-if not conf.CheckType('struct virtio_net_hdr', '#include <linux/virtio_net.h>\n'):
+if not conf.CheckType('struct virtio_net_hdr', '#include <pci/types.h>\n#include <linux/virtio_net.h>\n'):
     print("Your Linux headers are too old.")
     Exit(1)
 
@@ -89,12 +89,6 @@ if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOpt
 if not conf.CheckCXXHeader('list'):
     print("C++ STL seems broken.")
     Exit(1)
-
-if not conf.CheckCHeader('linux/virtio_net.h'):
-    print("linux/virtio_net.h does not compile! Trying again with ugly workaround...")
-    conf.env.Append(CPPFLAGS = ['-Du16=__u16'])
-    if not conf.CheckCHeader('linux/virtio_net.h'):
-        Exit(1)
 
 if not 'cpu' in ARGUMENTS:
     opt_cpu = 'corei7'
