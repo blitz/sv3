@@ -58,6 +58,9 @@ namespace Switch {
   protected:
     typedef std::list<Port *> PortsList;
 
+    // Signal handling
+    bool             _shutdown_called;
+
     // Count main loop iterations for our primitive RCU scheme.
     unsigned         _loop_count;
     bool             _loop_running;
@@ -88,7 +91,13 @@ namespace Switch {
     void attach_port(Port &p);
     void detach_port(Port &p);
 
+    // This function can be called from any thread or from signal
+    // context to shut the switch down. It will exit from its loop()
+    // method, if that is currently executing.
+    void shutdown();
+
     Switch();
+    ~Switch();
               
   };
 }

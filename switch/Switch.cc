@@ -15,13 +15,20 @@ namespace Switch {
     va_end(ap);
   }
 
+  void Switch::shutdown()
+  {
+    _shutdown_called = true;
+  }
+
   void Switch::loop()
   {
     const unsigned ms = 10;
     logf("Main loop entered. Polling every %ums.", ms);
 
     _loop_running = true;
-    while (true) {
+    while (not _shutdown_called) {
+      CONSIDER_MODIFIED(_shutdown_called);
+
       PortsList const &ports     = *_ports;     CONSIDER_MODIFIED(_ports);
       SwitchHash      &mac_cache = *_mac_table; CONSIDER_MODIFIED(_mac_table);
 
@@ -62,6 +69,8 @@ namespace Switch {
       // XXX We should block here.
       usleep(1000*ms);
     }
+
+    logf("main loop returned.");
   }
 
   void Switch::wait_loop_iteration()
@@ -120,12 +129,18 @@ namespace Switch {
   }
 
   Switch::Switch()
-    : _loop_count(0), _loop_running(false),
+    : _shutdown_called(false),
+      _loop_count(0), _loop_running(false),
       _mac_table(new SwitchHash), _ports(new PortsList),
       _ports_mtx(),
       _bcast_port(*this)
   {
     _bcast_port.enable();
+  }
+
+  Switch::~Switch()
+  {
+    // Don't need to do anything here for now.
   }
 
 }

@@ -236,9 +236,12 @@ namespace Switch {
         if (s._fd >= nfds) nfds = s._fd + 1;
       }
 
-      int res = select(nfds, &fdset, NULL, NULL, NULL);
+      struct timeval to;
+      to.tv_sec = 0;
+      to.tv_usec = 100000;
+      int res = select(nfds, &fdset, NULL, NULL, &to);
       if (res < 0) {
-        perror("select");
+        //perror("select");
         return;
       }
 
@@ -252,7 +255,7 @@ namespace Switch {
     } while (true);
   }
 
-  Listener::Listener(Switch &sw) : _sw(sw)
+  Listener::Listener(Switch &sw, bool force) : _sw(sw)
   {
     _sfd = socket(AF_LOCAL, SOCK_SEQPACKET, 0);
     if (_sfd < 0) throw std::system_error(errno, std::system_category());
@@ -263,9 +266,11 @@ namespace Switch {
 
     _sw.logf("Listening for clients on %s.", _local_addr.sun_path);
 
-    const int reuse = 1;
-    if (0 != setsockopt(_sfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)))
-      throw std::system_error(errno, std::system_category());
+    if (force) {
+      // Try to unlink the file. We don't care about the exit value,
+      // because bind() will catch all errors anyway.
+      unlink(_local_addr.sun_path);
+    }
 
     if (0 != bind(_sfd, reinterpret_cast<sockaddr *>(&_local_addr), sizeof(_local_addr)))
       throw std::system_error(errno, std::system_category());

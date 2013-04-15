@@ -72,7 +72,10 @@ namespace Switch {
     // the switch instance.
     static Sv3Response call(int fd, Sv3Request const &req);
 
-    Listener(Switch &sw);
+    // Create a listening socket for the switch through which it can
+    // be controlled by sv3-remote. If force is set, the unix file
+    // socket is unlnked prior to creating a new one.
+    Listener(Switch &sw, bool force = false);
     ~Listener();
   };
 
