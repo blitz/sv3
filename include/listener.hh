@@ -6,6 +6,7 @@
 #include <sys/un.h>
 
 #include <list>
+#include <thread>
 
 #include <switch.hh>
 
@@ -53,11 +54,10 @@ namespace Switch {
     int         _sfd;
     sockaddr_un _local_addr;
 
-    pthread_t   _thread;
+    std::thread _thread;
 
     std::list<Session> _sessions;
 
-    static void *thread_enter(void *);
     void thread_fun();
     void close_session(Session &session);
     void accept_session();

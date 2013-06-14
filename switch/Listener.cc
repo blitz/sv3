@@ -9,19 +9,10 @@
 
 #include <listener.hh>
 #include <system_error>
-#include <pthread.h>
 #include <tapport.hh>
 #include <qpport.hh>
 
 namespace Switch {
-
-
-  void *Listener::thread_enter(void *arg)
-  {
-    Listener *l = reinterpret_cast<Listener *>(arg);
-    l->thread_fun();
-    return nullptr;
-  }
 
   void Listener::close_session(Session &session)
   {
@@ -278,9 +269,7 @@ namespace Switch {
     if (0 != listen(_sfd, 5))
       throw std::system_error(errno, std::system_category());
 
-    int ret;
-    if (0 != (ret = pthread_create(&_thread, NULL, &thread_enter, this)))
-      throw std::system_error(ret, std::system_category());
+    _thread = std::thread(&Listener::thread_fun, this);
   }
 
   Listener::~Listener()
@@ -288,8 +277,7 @@ namespace Switch {
     close(_sfd);
     unlink(_local_addr.sun_path);
 
-    void *ret;
-    pthread_join(_thread, &ret);
+    _thread.join();
   }
 
 }
