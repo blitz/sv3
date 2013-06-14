@@ -1,8 +1,11 @@
 #pragma once
 
-#include <list>
-#include <functional>
+#include <urcu-qsbr.h>
 
+#include <list>
+#include <vector>
+#include <functional>
+#include <mutex>
 
 #include <header/ethernet.hh>
 #include <hash/ethernet.hh>
@@ -10,9 +13,6 @@
 
 #include <util.hh>
 #include <packetjob.hh>
-#include <mutex.hh>
-
-
 
 namespace Switch {
 
@@ -53,7 +53,7 @@ namespace Switch {
 
   typedef Hashtable<Ethernet::Address, Port *, Ethernet::hash, 1024, 1, nullptr> SwitchHash;
 
-  class Switch : Uncopyable {
+  class Switch : protected rcu_head, Uncopyable {
     friend class Listener;
   protected:
     typedef std::list<Port *> PortsList;
@@ -61,15 +61,19 @@ namespace Switch {
     // Signal handling
     bool             _shutdown_called;
 
-    // Count main loop iterations for our primitive RCU scheme.
-    unsigned         _loop_count;
+    // RCU
+    std::vector<void *> _pending_free;
+    std::mutex          _pending_free_mtx;
+    static void         cb_free_pending(struct rcu_head *);
+    void                free_pending(); // called via RCU
+
     bool             _loop_running;
 
     SwitchHash      *_mac_table;
     PortsList const *_ports;
 
     // Serializes access to _ports and _mac_table
-    Mutex            _ports_mtx;
+    std::mutex       _ports_mtx;
 
     // Broadcast traffic goes here.
     BroadcastPort    _bcast_port;

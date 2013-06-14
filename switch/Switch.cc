@@ -25,7 +25,6 @@ namespace Switch {
     const unsigned ms = 10;
     logf("Main loop entered. Polling every %ums.", ms);
 
-    _loop_running = true;
     while (not _shutdown_called) {
       CONSIDER_MODIFIED(_shutdown_called);
 
@@ -62,9 +61,7 @@ namespace Switch {
         p.callback(p);
       }
 
-      MEMORY_BARRIER;
-      _loop_count++;
-      MEMORY_BARRIER;
+      rcu_quiescent_state_qsbr();
 
       // XXX We should block here.
       usleep(1000*ms);
@@ -73,34 +70,49 @@ namespace Switch {
     logf("main loop returned.");
   }
 
-  void Switch::wait_loop_iteration()
+  void Switch::cb_free_pending(struct rcu_head *head)
   {
-      unsigned old_loop_count = _loop_count;
-      while (_loop_running and old_loop_count == _loop_running) {
-        CONSIDER_MODIFIED(_loop_running);
-        CONSIDER_MODIFIED(_loop_count);
-        RELAX();
-      }
+    Switch *sw = static_cast<Switch *>(head);
+    sw->free_pending();
+  }
+
+  void Switch::free_pending()
+  {
+    std::vector<void *> pending;
+    {
+      std::lock_guard<std::mutex> lock(_pending_free_mtx);
+      pending.swap(_pending_free);
+    }
+
+    for (void *p : pending) free(p);
   }
 
   void Switch::modify_ports(std::function<void(PortsList &)> f)
   {
-    Mutex::Guard g(_ports_mtx);
-    std::list<Port *> const *oldp = _ports;
+    std::list<Port *> const *oldp;
     std::list<Port *>       *newp = new std::list<Port *>(*_ports);
-    
-    f(*newp);
+    SwitchHash              *oldm;
+    SwitchHash              *newm = new SwitchHash;
 
-    // Invalidate MAC address cache and update ports list. Wait until
-    // the main loop has picked it up.
-    SwitchHash *oldm = _mac_table;
-    _mac_table = new SwitchHash;
-    _ports     = newp;
-    MEMORY_BARRIER;
-    wait_loop_iteration();
+    // Update ports list. Use a mutex to not race with other calls to
+    // this function.
+    {
+      std::lock_guard<std::mutex> lock(_ports_mtx);
+      oldp   = _ports;
+      f(*newp);
+      _ports = newp;
+    }
 
-    delete oldm;
-    delete oldp;
+    // Delete MAC address cache.
+    oldm = rcu_xchg_pointer(&_mac_table, newm);
+
+    {
+      std::lock_guard<std::mutex> lock(_pending_free_mtx);
+      _pending_free.push_back(oldm);
+      _pending_free.push_back((void *)oldp);
+    }
+
+    call_rcu(static_cast<struct rcu_head *>(this), cb_free_pending);
   }
 
   void Switch::attach_port(Port &p)
@@ -130,7 +142,6 @@ namespace Switch {
 
   Switch::Switch()
     : _shutdown_called(false),
-      _loop_count(0), _loop_running(false),
       _mac_table(new SwitchHash), _ports(new PortsList),
       _ports_mtx(),
       _bcast_port(*this)

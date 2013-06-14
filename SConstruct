@@ -44,6 +44,18 @@ def CheckPreprocessorMacro(context, header, macro):
     context.Result(result)
     return result
 
+def CheckPKGConfig(context, version):
+     context.Message( 'Checking for pkg-config... ' )
+     ret = context.TryAction('pkg-config --atleast-pkgconfig-version=%s' % version)[0]
+     context.Result( ret )
+     return ret
+
+def CheckPKG(context, name):
+     context.Message( 'Checking for %s... ' % name )
+     ret = context.TryAction('pkg-config --exists \'%s\'' % name)[0]
+     context.Result( ret )
+     return ret
+
 host_env = Environment(CCFLAGS = ['-pthread'],
                        CXXFLAGS = [],
                        LINKFLAGS = ['-pthread'],
@@ -73,7 +85,19 @@ host_env.Append(CCFLAGS = optflags, LINKFLAGS = optflags)
 
 conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag ,
                                             'CheckPreprocessorMacro' : CheckPreprocessorMacro,
+                                            'CheckPKGConfig' : CheckPKGConfig,
+                                            'CheckPKG' : CheckPKG,
                                             })
+if not conf.CheckPKGConfig('0.15.0'):
+    print('pkg-config >= 0.15.0 not found.')
+    Exit(1)
+
+if not conf.CheckPKG('liburcu-qsbr'):
+    print("Could not find userspace-rcu library (urcu).")
+    Exit(1)
+else:
+    conf.env.ParseConfig('pkg-config --cflags --libs liburcu-qsbr')
+    conf.env.Append(CPPFLAGS = ['-D_LGPL_SOURCE']) # to get the static definitions
 
 if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
     conf.env.Append(CPPFLAGS = ['-DNO_GETVNETHDRSZ'])
