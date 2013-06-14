@@ -62,8 +62,9 @@ namespace Switch {
     bool             _shutdown_called;
 
     // RCU
-    std::vector<void *> _pending_free;
-    std::mutex          _pending_free_mtx;
+    std::vector<std::function<void()>> _pending_free;
+    std::mutex                         _pending_free_mtx;
+
     static void         cb_free_pending(struct rcu_head *);
     void                free_pending(); // called via RCU
 

@@ -78,13 +78,13 @@ namespace Switch {
 
   void Switch::free_pending()
   {
-    std::vector<void *> pending;
+    std::vector<std::function<void()>> pending;
     {
       std::lock_guard<std::mutex> lock(_pending_free_mtx);
       pending.swap(_pending_free);
     }
 
-    for (void *p : pending) free(p);
+    for (std::function<void()> &p : pending) p();
   }
 
   void Switch::modify_ports(std::function<void(PortsList &)> f)
@@ -108,11 +108,13 @@ namespace Switch {
 
     {
       std::lock_guard<std::mutex> lock(_pending_free_mtx);
-      _pending_free.push_back(oldm);
-      _pending_free.push_back((void *)oldp);
+      _pending_free.push_back([=] () {
+          delete oldm;
+          delete oldp;
+        });
     }
 
-    call_rcu(static_cast<struct rcu_head *>(this), cb_free_pending);
+    call_rcu(this, cb_free_pending);
   }
 
   void Switch::attach_port(Port &p)
