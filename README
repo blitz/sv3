@@ -1,0 +1,8 @@
+A userspace switch for virtual machines.
+
+* Building
+
+Execute 'scons'. If you installed prerequisite libraries after you
+first scons run, you might have to do 'scons --config=force'
+afterwards.
+
