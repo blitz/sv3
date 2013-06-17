@@ -93,11 +93,13 @@ if not conf.CheckPKGConfig('0.15.0'):
     Exit(1)
 
 if not conf.CheckPKG('liburcu-qsbr'):
-    print("Could not find userspace-rcu library (urcu).")
-    Exit(1)
+    print("Could not find userspace-rcu library via pkg-config. Debian system?")
+    if not conf.CheckLibWithHeader('urcu-qsbr', 'urcu-qsbr.h', 'c'):
+        Exit(1)
 else:
     conf.env.ParseConfig('pkg-config --cflags --libs liburcu-qsbr')
-    conf.env.Append(CPPFLAGS = ['-D_LGPL_SOURCE']) # to get the static definitions
+
+conf.env.Append(CPPFLAGS = ['-D_LGPL_SOURCE']) # to get the static definitions
 
 if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
     conf.env.Append(CPPFLAGS = ['-DNO_GETVNETHDRSZ'])
