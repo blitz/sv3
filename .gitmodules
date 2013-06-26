@@ -1,3 +1,0 @@
-[submodule "3rd-party/qemu-kvm"]
-	path = 3rd-party/qemu-kvm
-	url = ssh://os.inf.tu-dresden.de/home/jsteckli/git-private/qemu-kvm.git/

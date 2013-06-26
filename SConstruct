@@ -11,6 +11,7 @@ cxx=COMPILER  Force build to use a specific C++ compiler.
 cpu=CPU       Optimize for the given CPU. Passed to -march.
 lto=0/1       Enable link-time optimization. Default is 0.
 asserts=1/0   Enable assertions at runtime. Default is 1.
+qemusrc=dir   Source directory of patched qemu. Default is ../qemu.
 """)
 
 
@@ -81,6 +82,9 @@ if int(ARGUMENTS.get('lto', 0)):
 if int(ARGUMENTS.get('asserts', 1)) == 0:
     host_env.Append(CPPFLAGS = ['-DNDEBUG'])
 
+qemusrc = ARGUMENTS.get('qemusrc', '../qemu')
+host_env.Append(CPPPATH = [qemusrc + "/include"])
+
 host_env.Append(CCFLAGS = optflags, LINKFLAGS = optflags)
 
 conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag ,
@@ -114,6 +118,10 @@ if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOpt
 
 if not conf.CheckCXXHeader('list'):
     print("C++ STL seems broken.")
+    Exit(1)
+
+if not conf.CheckHeader('hw/misc/externalpci.h'):
+    print("Pass proper qemusrc=... parameter. Could not find patched qemu at " + qemusrc)
     Exit(1)
 
 if not 'cpu' in ARGUMENTS:
