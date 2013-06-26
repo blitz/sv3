@@ -2,6 +2,7 @@
 #include <switch.hh>
 #include <cstdarg>
 #include <unistd.h>
+#include <sys/eventfd.h>
 
 namespace Switch {
 
@@ -18,54 +19,80 @@ namespace Switch {
   void Switch::shutdown()
   {
     _shutdown_called = true;
+    CONSIDER_MODIFIED(_shutdown_called);
+    uint64_t val = 1;
+    write(_event_fd, &val, sizeof(val));
+  }
+
+
+  /// Switch a couple of packets. Returns false if we were idle.
+  bool Switch::work_quantum(PortsList const &ports,
+			    SwitchHash      &mac_cache)
+  {
+    bool work_done = false;
+
+    for (Port *src_port : ports) { // Packet switching loop
+
+      Packet p;
+      if (not src_port->poll(p)) continue;
+      // logf("Polling port '%s' returned %u byte packet.", src_port->name(),
+      //      p.packet_length);
+
+      auto &ehdr = p.ethernet_header();
+      // logf("Destination %s", ehdr.dst.to_str());
+      // logf("Source      %s", ehdr.src.to_str());
+
+      Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? mac_cache[ehdr.dst] : nullptr;
+      assert(dst_port != src_port);
+
+      if (LIKELY(not ehdr.src.is_multicast())) {
+	// if (mac_cache[ehdr.src] != src_port)
+	//   logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
+	//        Ethernet::hash(ehdr.src),
+	//        src_port->name());
+
+	mac_cache.add(ehdr.src, src_port);
+      }
+
+      if (LIKELY(dst_port)) {
+	dst_port->receive(*src_port, p);
+      } else {
+	for (Port *dst_port : ports)
+	  if (dst_port != src_port)
+	    dst_port->receive(*src_port, p);
+      }
+
+      p.callback(p);
+      work_done = true;
+    }
+
+    return work_done;
   }
 
   void Switch::loop()
   {
-    const unsigned ms = 10;
-    logf("Main loop entered. Polling every %ums.", ms);
+    logf("Main loop entered.");
 
-    while (not _shutdown_called) {
+    do {			// Main loop
+
+      bool work_done;
+      do {			// RCU Loop
+	rcu_quiescent_state_qsbr();
+
+	PortsList const &ports     = *rcu_dereference(_ports);
+	SwitchHash      &mac_cache = *rcu_dereference(_mac_table);
+	work_done = work_quantum(ports, mac_cache);
+
+      } while (LIKELY(work_done));
+
+      // Block
+      rcu_thread_offline_qsbr();
+      uint64_t val;
+      read(_event_fd, &val, sizeof(val));
+      rcu_thread_online_qsbr();
+
       CONSIDER_MODIFIED(_shutdown_called);
-
-      PortsList const &ports     = *_ports;     CONSIDER_MODIFIED(_ports);
-      SwitchHash      &mac_cache = *_mac_table; CONSIDER_MODIFIED(_mac_table);
-
-      for (Port *src_port : ports) {
-
-        Packet p;
-        if (not src_port->poll(p)) continue;
-        // logf("Polling port '%s' returned %u byte packet.", src_port->name(),
-        //      p.packet_length);
-
-        auto &ehdr = p.ethernet_header();
-        // logf("Destination %s", ehdr.dst.to_str());
-        // logf("Source      %s", ehdr.src.to_str());
-
-        Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? mac_cache[ehdr.dst] : nullptr;
-        assert(dst_port != src_port and
-               dst_port != &_bcast_port);
-
-        if (LIKELY(not (src_port == &_bcast_port or ehdr.src.is_multicast()))) {
-          // if (mac_cache[ehdr.src] != src_port)
-          //   logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
-          //        Ethernet::hash(ehdr.src),
-          //        src_port->name());
-
-          mac_cache.add(ehdr.src, src_port);
-        }
-
-        if (UNLIKELY(!dst_port)) dst_port = &_bcast_port;
-        dst_port->receive(*src_port, p);
-
-        p.callback(p);
-      }
-
-      rcu_quiescent_state_qsbr();
-
-      // XXX We should block here.
-      usleep(1000*ms);
-    }
+    } while (not _shutdown_called);
 
     logf("main loop returned.");
   }
@@ -109,9 +136,9 @@ namespace Switch {
     {
       std::lock_guard<std::mutex> lock(_pending_free_mtx);
       _pending_free.push_back([=] () {
-          delete oldm;
-          delete oldp;
-        });
+	  delete oldm;
+	  delete oldp;
+	});
     }
 
     call_rcu(this, cb_free_pending);
@@ -123,32 +150,31 @@ namespace Switch {
     modify_ports([&](PortsList &ports) { ports.push_front(&p); size = ports.size(); });
 
     logf("Attaching port '%s'. We have %zu port%s.",
-         p.name(), size, size == 1 ? "" : "s");
+	 p.name().c_str(), size, size == 1 ? "" : "s");
   }
 
   void Switch::detach_port(Port &p)
   {
     size_t size;
     modify_ports([&](PortsList &ports) {
-        for (auto it = ports.begin(); it != ports.end(); ++it)
-          if (*it == &p) {
-            ports.erase(it);
-            size = ports.size();
+	for (auto it = ports.begin(); it != ports.end(); ++it)
+	  if (*it == &p) {
+	    ports.erase(it);
+	    size = ports.size();
 
-            logf("Detaching port '%s'. %zu port%s left.",
-                 p.name(), size, size == 1 ? "" : "s");
-            break;
-          }
+	    logf("Detaching port '%s'. %zu port%s left.",
+		 p.name().c_str(), size, size == 1 ? "" : "s");
+	    break;
+	  }
       });
   }
 
   Switch::Switch()
     : _shutdown_called(false),
       _mac_table(new SwitchHash), _ports(new PortsList),
-      _ports_mtx(),
-      _bcast_port(*this)
+      _ports_mtx()
   {
-    _bcast_port.enable();
+    _event_fd = eventfd(0, 0);
   }
 
   Switch::~Switch()

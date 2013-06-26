@@ -6,6 +6,7 @@
 #include <vector>
 #include <functional>
 #include <mutex>
+#include <string>
 
 #include <header/ethernet.hh>
 #include <hash/ethernet.hh>
@@ -23,33 +24,26 @@ namespace Switch {
   class Port : Uncopyable {
   protected:
     Switch     &_switch;
-    char const *_name;
+    std::string _name;
 
     void logf(char const *str, ...);
-    
+
   public:
-    char const *name() const { return _name; }
+    std::string const name() const { return _name; }
 
     virtual void receive(Port &src_port, Packet &p) = 0;
     virtual bool poll(Packet &p) = 0;
 
-    // Call this after the instance is completely constructed.
-    void    enable();
+    /// Call this after the instance is completely constructed and
+    /// ready to receive packets.
+    void enable();
 
-    Port(Switch &sw, char const *name);
+    /// Call this if the port should not be polled any more.
+    void disable();
+
+    Port(Switch &sw, std::string name);
     virtual ~Port();
   };
-
-  /// A broadcast sink. Will do the right thing.
-  class BroadcastPort : public Port {
-
-  public:
-    virtual void receive(Port &src_port, Packet &p);
-    virtual bool poll(Packet &p);
-
-    BroadcastPort(Switch &sw) : Port(sw, "broadcast") { }
-  };
-
 
   typedef Hashtable<Ethernet::Address, Port *, Ethernet::hash, 1024, 1, nullptr> SwitchHash;
 
@@ -57,6 +51,9 @@ namespace Switch {
     friend class Listener;
   protected:
     typedef std::list<Port *> PortsList;
+
+    // Blocking
+    int              _event_fd;
 
     // Signal handling
     bool             _shutdown_called;
@@ -68,23 +65,18 @@ namespace Switch {
     static void         cb_free_pending(struct rcu_head *);
     void                free_pending(); // called via RCU
 
-    bool             _loop_running;
-
     SwitchHash      *_mac_table;
     PortsList const *_ports;
 
     // Serializes access to _ports and _mac_table
     std::mutex       _ports_mtx;
 
-    // Broadcast traffic goes here.
-    BroadcastPort    _bcast_port;
-
-    // Wait until one loop iteration has passed. This is a no-op, if
-    // the main loop is not running.
-    void wait_loop_iteration();
-
     // Modify the list of ports.
     void modify_ports(std::function<void(PortsList &)> f);
+
+
+    bool work_quantum(PortsList const &ports,
+		      SwitchHash      &mac_cache);
 
   public:
 
@@ -103,7 +95,7 @@ namespace Switch {
 
     Switch();
     ~Switch();
-              
+
   };
 }
 

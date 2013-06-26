@@ -8,7 +8,7 @@ namespace Switch {
   {
     va_list  ap;
     va_start(ap, str);
-    printf("%10s: ", _name);
+    printf("%10s: ", _name.c_str());
     vprintf(str, ap);
     puts("");
     va_end(ap);
@@ -19,15 +19,19 @@ namespace Switch {
     _switch.attach_port(*this);
   }
 
-  Port::Port(Switch &sw, char const *name)
-    : _switch(sw),  _name(strdup(name))
+  void Port::disable()
+  {
+    _switch.detach_port(*this);
+  }
+
+  Port::Port(Switch &sw, std::string name)
+    : _switch(sw),  _name(name)
   {
   }
 
   Port::~Port()
   {
-    _switch.detach_port(*this);
-    delete _name;
+    disable();
   }
 
 }

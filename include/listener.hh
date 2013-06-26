@@ -1,17 +1,17 @@
-// 
+//
 
 #pragma once
 
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/mman.h>
 
 #include <list>
 #include <thread>
 
 #include <switch.hh>
 
-#include <sv3-client.h>
-#include <sv3-messages.h>
+#include <hw/misc/externalpci.h>
 
 namespace Switch {
 
@@ -22,29 +22,61 @@ namespace Switch {
     uint8_t *mapping;
   };
 
-  struct Session {
-    int          _fd;
-    int          _event_fd;
-    sockaddr_un  _sa;
+  class RegionList {
+    std::list<Region> _list;
 
-    std::list<Region> _regions;
-    std::list<Port *> _ports;
+  public:
+    bool insert(Region const &r);
 
     template<typename P>
-    P *translate_ptr(uint64_t p) {
-      // XXX We don't care about length yet... p might cross a region
-      // boundary.
+    P *translate_ptr(uint64_t addr) {
+      // Do they want to fool us?
+      size_t size = sizeof(P);
 
-      for (auto &r : _regions) {
-        uint64_t tp = p - r.addr;
-        if (tp < r.size)
-          return reinterpret_cast<P *>(r.mapping + tp);
+      if (addr + size <= addr) return nullptr;
+
+      for (auto &r : _list) {
+	if (r.addr <= addr and
+	    addr + size < r.addr + r.size)
+	  return reinterpret_cast<P *>(r.mapping + (addr - r.addr));
       }
 
       return nullptr;
     }
 
-    Session() : _event_fd(0), _regions(), _ports() { }
+    ~RegionList() {
+      for (auto &r : _list)
+	munmap(r.mapping, r.size);
+    }
+  };
+
+  struct Session {
+    /// Switch instance.
+    Switch      &_sw;
+
+    /// Session file descriptor.
+    int          _fd;
+
+    /// Client socket address.
+    sockaddr_un  _sa;
+
+    RegionList   _regions;
+
+    /// File descriptors we accepted that must be cleaned up on session
+    /// termination.
+    std::list<int>    _file_descriptors;
+
+    template<typename P>
+    P *translate_ptr(uint64_t addr) { return _regions.translate_ptr<P>(addr); }
+
+    /// Check for a message. Shouldn't block.
+    bool poll();
+
+    externalpci_res handle_request(externalpci_req const &req);
+
+    Session(Switch &sw, int fd, sockaddr_un sa) :
+      _sw(sw), _fd(fd), _sa(sa), _regions(), _file_descriptors() { }
+    ~Session();
   };
 
 
@@ -56,25 +88,16 @@ namespace Switch {
 
     std::thread _thread;
 
-    std::list<Session> _sessions;
+    std::list<Session *> _sessions;
 
     void thread_fun();
-    void close_session(Session &session);
     void accept_session();
-    bool poll(Session &session);
-    bool insert_region(Session &session, Region r);
-
-    Sv3Response handle_request(Session &session, Sv3Request &req);
 
   public:
 
-    // Pass a request over the given fd, which should be connected to
-    // the switch instance.
-    static Sv3Response call(int fd, Sv3Request const &req);
-
     // Create a listening socket for the switch through which it can
     // be controlled by sv3-remote. If force is set, the unix file
-    // socket is unlnked prior to creating a new one.
+    // socket is unlinked prior to creating a new one.
     Listener(Switch &sw, bool force = false);
     ~Listener();
   };

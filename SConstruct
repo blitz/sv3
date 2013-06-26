@@ -1,5 +1,7 @@
 # -*- Mode: Python -*-
 
+import sv3utils as u
+
 print("Use 'scons -h' to show build help.")
 
 Help("""
@@ -15,47 +17,6 @@ qemusrc=dir   Source directory of patched qemu. Default is ../qemu.
 """)
 
 
-
-# Add flag to env[key] if the compiler is able to build an object file
-# with this. extension can be '.c' or '.cc'.
-def AddOptionalFlag(context, extension, key, flag):
-    context.Message('Check if compiler supports "%s"... ' % flag)
-    old_var = context.env[key];
-    context.env[key] =  context.env[key] + [flag]
-    result = context.TryCompile('', extension)
-    context.Result(result)
-    if not result:
-        context.env[key] = old_var
-    return result
-
-preproc_test_source_file = """
-#include <%s>
-int main(int argc, char **argv)
-{
-#ifdef %s
-  return 0;
-#else
-#error No
-#endif
-}"""
-
-def CheckPreprocessorMacro(context, header, macro):
-    context.Message("Looking for %s in %s..." % (macro, header))
-    result = context.TryLink(preproc_test_source_file % (header, macro), '.c')
-    context.Result(result)
-    return result
-
-def CheckPKGConfig(context, version):
-     context.Message( 'Checking for pkg-config... ' )
-     ret = context.TryAction('pkg-config --atleast-pkgconfig-version=%s' % version)[0]
-     context.Result( ret )
-     return ret
-
-def CheckPKG(context, name):
-     context.Message( 'Checking for %s... ' % name )
-     ret = context.TryAction('pkg-config --exists \'%s\'' % name)[0]
-     context.Result( ret )
-     return ret
 
 host_env = Environment(CCFLAGS = ['-pthread'],
                        CXXFLAGS = [],
@@ -87,10 +48,10 @@ host_env.Append(CPPPATH = [qemusrc + "/include"])
 
 host_env.Append(CCFLAGS = optflags, LINKFLAGS = optflags)
 
-conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : AddOptionalFlag ,
-                                            'CheckPreprocessorMacro' : CheckPreprocessorMacro,
-                                            'CheckPKGConfig' : CheckPKGConfig,
-                                            'CheckPKG' : CheckPKG,
+conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : u.AddOptionalFlag ,
+                                            'CheckPreprocessorMacro' : u.CheckPreprocessorMacro,
+                                            'CheckPKGConfig' : u.CheckPKGConfig,
+                                            'CheckPKG' : u.CheckPKG,
                                             })
 if not conf.CheckPKGConfig('0.15.0'):
     print('pkg-config >= 0.15.0 not found.')
@@ -155,8 +116,6 @@ common_objs = [host_env.Object(f) for f in Glob('switch/*.cc')]
 ts = host_env.Program('sv3', ['sv3.cc'] + common_objs)
 # Clean leftover core files as well
 Clean(ts, Glob("core.*"))
-
-ts = host_env.Program('sv3-remote', ['sv3-remote.cc'] + common_objs)
 
 # Tests
 
