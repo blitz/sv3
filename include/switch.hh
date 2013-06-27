@@ -36,10 +36,10 @@ namespace Switch {
 
     /// Call this after the instance is completely constructed and
     /// ready to receive packets.
-    void enable();
+    virtual void enable();
 
     /// Call this if the port should not be polled any more.
-    void disable();
+    virtual void disable();
 
     Port(Switch &sw, std::string name);
     virtual ~Port();
@@ -80,6 +80,10 @@ namespace Switch {
 
   public:
 
+    /// We expose this to allow ports to map this file descriptor
+    /// outside of the switch process.
+    int event_fd() const { return _event_fd; }
+
     std::list<Port *> const &ports() const { return *_ports; }
 
     void logf(char const *str, ...);
@@ -92,6 +96,9 @@ namespace Switch {
     // context to shut the switch down. It will exit from its loop()
     // method, if that is currently executing.
     void shutdown();
+
+    // Wake up the polling thread and have it poll all ports.
+    void schedule_poll();
 
     Switch();
     ~Switch();

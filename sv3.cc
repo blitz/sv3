@@ -29,23 +29,29 @@ int main(int argc, char **argv)
       break;
     default: /* '?' */
       fprintf(stderr, "Usage: %s [-f]\n", argv[0]);
-      exit(EXIT_FAILURE);
+      return EXIT_FAILURE;
     }
   }
 
-  Switch::Switch   sv3;
-  Switch::Listener listener(sv3, force);
+  try {
+    Switch::Switch   sv3;
+    Switch::Listener listener(sv3, force);
 
-  struct sigaction sa;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_handler   = sigint_handler;
-  sa.sa_flags     = 0;
-  signal_switch   = &sv3;
-  sigaction(SIGINT, &sa, nullptr);
+    struct sigaction sa;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_handler   = sigint_handler;
+    sa.sa_flags     = 0;
+    signal_switch   = &sv3;
+    sigaction(SIGINT, &sa, nullptr);
 
-  sv3.loop();
+    sv3.loop();
 
-  return EXIT_SUCCESS;
+    return EXIT_SUCCESS;
+  } catch (std::system_error &e) {
+    fprintf(stderr, "\nFatal system error: '%s'\n", e.what());
+  }
+
+  return EXIT_FAILURE;
 }
 
 // EOF

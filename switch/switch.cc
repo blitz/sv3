@@ -94,7 +94,7 @@ namespace Switch {
       CONSIDER_MODIFIED(_shutdown_called);
     } while (not _shutdown_called);
 
-    logf("main loop returned.");
+    logf("Main loop returned.");
   }
 
   void Switch::cb_free_pending(struct rcu_head *head)
@@ -167,6 +167,12 @@ namespace Switch {
 	    break;
 	  }
       });
+  }
+
+  void Switch::schedule_poll()
+  {
+    uint64_t v = 1;
+    write(_event_fd, &v, sizeof(v));
   }
 
   Switch::Switch()
