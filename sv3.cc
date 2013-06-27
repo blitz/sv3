@@ -8,10 +8,18 @@
 #include <switch.hh>
 #include <listener.hh>
 
-Switch::Switch *signal_switch;
-void sigint_handler(int)
+static Switch::Switch *signal_switch;
+static bool            signal_caught;
+
+static void sigint_handler(int)
 {
-  signal_switch->shutdown();
+  // Try graceful shutdown first. On second signal exit directly.
+  if (not signal_caught) {
+    signal_switch->shutdown();
+    signal_caught = true;
+  } else {
+    _Exit(EXIT_FAILURE);
+  }
 }
 
 
@@ -43,7 +51,9 @@ int main(int argc, char **argv)
     sa.sa_handler   = sigint_handler;
     sa.sa_flags     = 0;
     signal_switch   = &sv3;
-    sigaction(SIGINT, &sa, nullptr);
+
+    sigaction(SIGINT,  &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
 
     sv3.loop();
 
