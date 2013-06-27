@@ -17,8 +17,9 @@ void sigint_handler(int)
 
 int main(int argc, char **argv)
 {
-  printf("sv3 - Userspace Software Switch.\n"
-         "Blame Julian Stecklina <jsteckli@os.inf.tu-dresden.de>\n\n");
+  printf("sv3 - Userspace Software Switch ["
+#include "version.inc"
+	 "]\nBlame Julian Stecklina <jsteckli@os.inf.tu-dresden.de>\n\n");
 
   bool force = false;
   int  opt;

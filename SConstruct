@@ -110,6 +110,9 @@ else:
     pcap_is_available = True
 host_pcap_env = conf.Finish()
 
+## Version info
+AlwaysBuild(Command('version.inc', ['sv3.cc'], """git describe --dirty --always | sed 's/^\\(.*\\)$/"\\1"/' > $TARGET"""))
+
 ## Switch library
 
 common_objs = [host_env.Object(f) for f in Glob('switch/*.cc')]
