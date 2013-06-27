@@ -98,9 +98,7 @@ conf.AddOptionalFlag('.c', 'CCFLAGS',   "-march=%s" % opt_cpu )
 conf.AddOptionalFlag('.c', 'LINKFLAGS', "-march=%s" % opt_cpu )
 
 conf.AddOptionalFlag('.c', 'CCFLAGS', '-Wall')
-#conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-Weffc++')
-conf.AddOptionalFlag('.c', 'CCFLAGS',   '-ffunction-sections')
-conf.AddOptionalFlag('.c', 'LINKFLAGS', '-Wl,--gc-sections' )
+#conf.AddOptionalFlag('.c', 'CCFLAGS', '-Wextra')
 host_env = conf.Finish()
 
 host_pcap_env = host_env.Clone()
