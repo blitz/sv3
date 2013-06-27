@@ -79,10 +79,12 @@ namespace Switch {
       do {			// RCU Loop
 	rcu_quiescent_state_qsbr();
 
-	PortsList const &ports     = *rcu_dereference(_ports);
+	// Casting madness... Otherwise this won't compile.
+	PortsList **pports = const_cast<PortsList **>(&_ports);
+	PortsList const &ports     = *rcu_dereference(*pports);
 	SwitchHash      &mac_cache = *rcu_dereference(_mac_table);
-	work_done = work_quantum(ports, mac_cache);
 
+	work_done = work_quantum(ports, mac_cache);
       } while (LIKELY(work_done));
 
       // Block

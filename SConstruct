@@ -57,14 +57,18 @@ if not conf.CheckPKGConfig('0.15.0'):
     print('pkg-config >= 0.15.0 not found.')
     Exit(1)
 
+if int(ARGUMENTS.get('debug', 1)) == 0:
+    print("Enabling inline versions of Userspace RCU functions.")
+    conf.env.Append(CPPFLAGS = ['-D_LGPL_SOURCE']) # to get the static definitions in liburcu
+
+
+
 if not conf.CheckPKG('liburcu-qsbr'):
     print("Could not find userspace-rcu library via pkg-config. Debian system?")
     if not conf.CheckLibWithHeader('urcu-qsbr', 'urcu-qsbr.h', 'c'):
         Exit(1)
 else:
     conf.env.ParseConfig('pkg-config --cflags --libs liburcu-qsbr')
-
-conf.env.Append(CPPFLAGS = ['-D_LGPL_SOURCE']) # to get the static definitions
 
 if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
     conf.env.Append(CPPFLAGS = ['-DNO_GETVNETHDRSZ'])
