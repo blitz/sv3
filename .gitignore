@@ -7,3 +7,5 @@
 /config.log
 /sv3
 /sv3-remote
+core.*
+/version.inc
