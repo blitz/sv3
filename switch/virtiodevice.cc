@@ -5,10 +5,6 @@
 
 #include <sstream>
 
-enum {
-  MSIX_VECTORS = 3,
-};
-
 namespace Switch {
 
 
@@ -40,23 +36,28 @@ namespace Switch {
     fd     = _session._sw.event_fd();
   }
 
-
-
-  void VirtioDevice::receive(Port &src_port, Packet &p)
+  void VirtioDevice::get_msix_info  (int fd, int index,
+				     bool &valid, bool &more)
   {
-    logf("%s: not implemented", __func__);
-  }
+    if (index < MSIX_VECTORS) {
+      if (_irq_fd[index] == 0) {
+	_irq_fd[index] = fd;
+	logf("MSI-X vector %u triggered by fd %u.", index, fd);
+	valid = true;
+      } else {
+	/* Already configured */
+	_session.close_fd(fd);
+	valid = false;
+      }
+    }
 
-  bool VirtioDevice::poll(Packet &p)
-  {
-    logf("%s: not implemented", __func__);
-    return false;
+    more = ((index + 1) < MSIX_VECTORS);
   }
-
 
   VirtioDevice::VirtioDevice(Session &session)
     : ExternalDevice(session),
-      Port(session._sw, std::string("VirtIO ") + std::to_string(session._fd))
+      Port(session._sw, std::string("VirtIO ") + std::to_string(session._fd)),
+      _irq_fd()
   {
 
   }

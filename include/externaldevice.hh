@@ -27,6 +27,9 @@ namespace Switch {
 				 uint8_t  &hotspot_size,
 				 int      &hotspot_fd) = 0;
 
+    virtual void get_msix_info  (int fd, int index,
+				 bool &valid, bool &more) = 0;
+
 
     virtual uint64_t io_read (unsigned bar_no,
 			      uint64_t addr,

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <algorithm>
 
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/mman.h>
@@ -77,6 +79,17 @@ namespace Switch {
 
     bool handle_request(externalpci_req const &req,
 			externalpci_res &res);
+
+    void close_fd(int fd)
+    {
+      close(fd);
+
+      auto it = std::find(_file_descriptors.begin(),
+			  _file_descriptors.end(),
+			  fd);
+      assert(it != _file_descriptors.end());
+      _file_descriptors.erase(it);
+    }
 
     Session(Switch &sw, int fd, sockaddr_un sa) :
       _sw(sw), _fd(fd), _sa(sa), _regions(),

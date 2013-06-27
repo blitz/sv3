@@ -106,8 +106,27 @@ namespace Switch {
       _device.reset();
       break;
     }
-    case EXTERNALPCI_REQ_IOT:
+    case EXTERNALPCI_REQ_IOT: {
+      bool irqs_changed = false;
+
+      if (req.iot_req.type == externalpci_iot_req::IOT_READ)
+        res.iot_res.value = _device.io_read(req.iot_req.bar,
+					    req.iot_req.hwaddr, req.iot_req.size);
+      else {
+        _device.io_write(req.iot_req.bar, req.iot_req.hwaddr,
+			 req.iot_req.size, req.iot_req.value, irqs_changed);
+      }
+
+      /* Notify qemu if it can fetch IRQ info. */
+      if (irqs_changed)
+	res.flags |= EXTERNALPCI_RES_FLAG_FETCH_IRQS;
+
+      break;
+    }
     case EXTERNALPCI_REQ_IRQ:
+      _device.get_msix_info(req.irq_req.fd,    req.irq_req.idx,
+			    res.irq_res.valid, res.irq_res.more);
+      break;
     case EXTERNALPCI_REQ_EXIT:
     default:
       _sw.logf("Didn't understand message %u from client %d",

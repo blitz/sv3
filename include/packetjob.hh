@@ -7,7 +7,7 @@ struct iovec;
 namespace Switch {
 
   struct Packet {
-    constexpr static unsigned MAX_FRAGMENTS = 16;
+    constexpr static unsigned MAX_FRAGMENTS = 64;
 
     uint8_t const *fragment[MAX_FRAGMENTS];
     uint16_t       fragment_length[MAX_FRAGMENTS];

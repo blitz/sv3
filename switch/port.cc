@@ -22,6 +22,7 @@ namespace Switch {
   void Port::disable()
   {
     _switch.detach_port(*this);
+    synchronize_rcu();
   }
 
   Port::Port(Switch &sw, std::string name)

@@ -10,6 +10,12 @@ namespace Switch {
   {
     #include "virtio-constants.h"
 
+    enum {
+      MSIX_VECTORS = 3
+    };
+
+    int _irq_fd[MSIX_VECTORS];
+
   public:
 
 
@@ -29,6 +35,10 @@ namespace Switch {
 				 uint16_t &addr,
 				 uint8_t  &size,
 				 int      &fd)
+      override;
+
+    virtual void get_msix_info  (int fd, int index,
+				 bool &valid, bool &more)
       override;
 
 

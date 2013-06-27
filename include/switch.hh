@@ -17,8 +17,6 @@
 
 namespace Switch {
 
-  constexpr static unsigned MAX_MTU = 9000;
-
   class Switch;
 
   class Port : Uncopyable {
@@ -38,7 +36,9 @@ namespace Switch {
     /// ready to receive packets.
     virtual void enable();
 
-    /// Call this if the port should not be polled any more.
+    /// Call this if the port should not be polled any more. Waits
+    /// until the switch loop doesn't see the port anymore, i.e. calls
+    /// to poll() and receive() have finished.
     virtual void disable();
 
     Port(Switch &sw, std::string name);
@@ -47,7 +47,16 @@ namespace Switch {
 
   typedef Hashtable<Ethernet::Address, Port *, Ethernet::hash, 1024, 1, nullptr> SwitchHash;
 
-  class Switch : protected rcu_head, Uncopyable {
+  /// A port behaved strangely and needs to be removed. Can be thrown
+  /// in the dynamic extent of Switch::loop().
+  class PortBrokenException {
+    Port &_port;
+  public:
+    Port &port() const { return _port; }
+    PortBrokenException(Port &port) : _port(port) { }
+  };
+
+  class Switch final : protected rcu_head, Uncopyable {
     friend class Listener;
   protected:
     typedef std::list<Port *> PortsList;
