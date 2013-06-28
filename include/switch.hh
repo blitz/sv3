@@ -7,6 +7,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <atomic>
 
 #include <header/ethernet.hh>
 #include <hash/ethernet.hh>
@@ -65,7 +66,7 @@ namespace Switch {
     int              _event_fd;
 
     // Signal handling
-    bool             _shutdown_called;
+    std::atomic<bool> _shutdown_called;
 
     // RCU
     std::vector<std::function<void()>> _pending_free;
@@ -105,6 +106,11 @@ namespace Switch {
     // context to shut the switch down. It will exit from its loop()
     // method, if that is currently executing.
     void shutdown();
+
+    /// Has the shutdown been initiated?
+    /// XXX Can we get by with mo_relaxed here?
+    bool should_shutdown()
+    { return _shutdown_called.load(std::memory_order_relaxed); }
 
     // Wake up the polling thread and have it poll all ports.
     void schedule_poll();

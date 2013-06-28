@@ -18,8 +18,7 @@ namespace Switch {
 
   void Switch::shutdown()
   {
-    _shutdown_called = true;
-    CONSIDER_MODIFIED(_shutdown_called);
+    _shutdown_called.store(true, std::memory_order_seq_cst);
     uint64_t val = 1;
     write(_event_fd, &val, sizeof(val));
   }
@@ -77,11 +76,11 @@ namespace Switch {
 
       bool work_done;
       do {			// RCU Loop
-	rcu_quiescent_state_qsbr();
+	rcu_quiescent_state();
 
 	try {
 	  // Casting madness... Otherwise this won't compile.
-	  PortsList **pports = const_cast<PortsList **>(&_ports);
+	  PortsList      **pports    =  const_cast<PortsList **>(&_ports);
 	  PortsList const &ports     = *rcu_dereference(*pports);
 	  SwitchHash      &mac_cache = *rcu_dereference(_mac_table);
 
@@ -90,16 +89,16 @@ namespace Switch {
 	  detach_port(e.port());
 	  work_done = true;
 	}
-      } while (LIKELY(work_done));
+      } while (LIKELY(work_done and not should_shutdown()));
 
       // Block
-      rcu_thread_offline_qsbr();
+      rcu_thread_offline();
       uint64_t val;
       read(_event_fd, &val, sizeof(val));
-      rcu_thread_online_qsbr();
+      rcu_thread_online();
 
-      CONSIDER_MODIFIED(_shutdown_called);
-    } while (not _shutdown_called);
+
+    } while (not should_shutdown());
 
     logf("Main loop returned.");
   }
@@ -137,7 +136,7 @@ namespace Switch {
       _ports = newp;
     }
 
-    // Delete MAC address cache.
+    // Delete MAC address cache. No problem to race here.
     oldm = rcu_xchg_pointer(&_mac_table, newm);
 
     {

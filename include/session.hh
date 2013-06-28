@@ -53,7 +53,10 @@ namespace Switch {
     }
   };
 
-  struct Session {
+  class Session {
+    // XXX Write proper accessors.
+  public:
+
     /// Switch instance.
     Switch      &_sw;
 

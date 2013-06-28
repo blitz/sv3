@@ -1,23 +1,123 @@
 #pragma once
 
+#include <atomic>
+
 #include <externaldevice.hh>
 #include <switch.hh>
 
+#include <sys/uio.h>		// for struct iovec
+
 namespace Switch {
+
+  enum {
+    VIRTQUEUE_MAX_SIZE = 1024,
+  };
+
+  struct VirtQueueElement
+  {
+    unsigned int index;
+    unsigned int out_num;
+    unsigned int in_num;
+    uint64_t in_addr[VIRTQUEUE_MAX_SIZE];
+    uint64_t out_addr[VIRTQUEUE_MAX_SIZE];
+    struct iovec in_sg[VIRTQUEUE_MAX_SIZE];
+    struct iovec out_sg[VIRTQUEUE_MAX_SIZE];
+  };
+
+  struct VRingDesc
+  {
+    uint64_t addr;
+    uint32_t len;
+    uint16_t flags;
+    uint16_t next;
+  };
+
+  struct VRingAvail
+  {
+    uint16_t flags;
+    uint16_t idx;
+    uint16_t ring[];
+  };
+
+  struct VRingUsedElem
+  {
+    uint32_t id;
+    uint32_t len;
+  };
+
+  struct VRingUsed
+  {
+    uint16_t flags;
+    uint16_t idx;
+    VRingUsedElem ring[];
+  };
+
+  struct VRing
+  {
+    unsigned int num;
+    VRingDesc  *desc;
+    VRingAvail *avail;
+    VRingUsed  *used;
+  };
+
+
+  struct VirtQueue
+  {
+    VRing vring;
+    uint64_t pa;
+    uint16_t last_avail_idx;
+    /* Last used index value we have signalled on */
+    uint16_t signalled_used;
+
+    /* Last used index value we have signalled on */
+    bool signalled_used_valid;
+
+    /* Notification enabled? */
+    bool notification;
+    uint16_t queue_index;
+
+    int inuse;
+
+    uint16_t vector;
+    // void (*handle_output)(VirtIODevice *vdev, VirtQueue *vq);
+
+    // EventNotifier guest_notifier;
+    // EventNotifier host_notifier;
+  };
+
 
   class VirtioDevice final : public ExternalDevice,
 			     public Port
   {
-    #include "virtio-constants.h"
+#include "virtio-constants.h"
 
     enum {
-      MSIX_VECTORS = 3
+      MSIX_VECTORS = 3,
+      VIRT_QUEUES  = 3,
     };
 
     int _irq_fd[MSIX_VECTORS];
 
-  public:
+    /* virtio */
+    bool                 online; // Are we attached to the switch?
 
+    uint8_t              status;
+    std::atomic<uint8_t> isr;
+    uint16_t             queue_sel;
+    uint16_t             config_vector;
+
+    uint32_t             guest_features;
+    uint32_t             host_features;
+
+    VirtQueue  vq[VIRT_QUEUES];
+
+    VirtQueue &rx_vq()   { return vq[0]; }
+    VirtQueue &tx_vq()   { return vq[1]; }
+    VirtQueue &ctrl_vq() { return vq[2]; }
+
+    void vq_set_addr(VirtQueue &vq, uint64_t addr);
+
+  public:
 
     // ExternalDevice methods
 
@@ -57,6 +157,9 @@ namespace Switch {
     virtual void reset() override;
 
     // Port methods
+
+    virtual void enable()  override { Port::enable();  online = true; }
+    virtual void disable() override { Port::disable(); online = false; }
 
     virtual void receive(Port &src_port, Packet &p) override;
     virtual bool poll(Packet &p) override;

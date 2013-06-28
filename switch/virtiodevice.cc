@@ -57,7 +57,7 @@ namespace Switch {
   VirtioDevice::VirtioDevice(Session &session)
     : ExternalDevice(session),
       Port(session._sw, std::string("VirtIO ") + std::to_string(session._fd)),
-      _irq_fd()
+      _irq_fd(), online(false)
   {
 
   }

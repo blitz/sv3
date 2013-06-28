@@ -241,6 +241,10 @@ namespace Switch {
 
   void Listener::thread_fun()
   {
+    rcu_register_thread();
+
+
+
     do {
       fd_set fdset;
       int    nfds = 0;

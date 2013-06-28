@@ -22,12 +22,27 @@ static void sigint_handler(int)
   }
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+# define COMPILER "gcc "
+# define COMPILER_VERSION __VERSION__
+#elif defined(__clang__)
+# define COMPILER "clang "
+# define COMPILER_VERSION __clang_version__
+#else
+# define COMPILER "an unknown compiler"
+# define COMPILER_VERSION ""
+#endif
 
 int main(int argc, char **argv)
 {
-  printf("sv3 - Userspace Software Switch ["
+  printf("           ____\n"
+	 "  ____  __|_  / Userspace\n"
+	 " (_-< |/ //_ <  Software\n"
+	 "/___/___/____/  Switch\n\n"
+	 "Built from git revision ["
 #include "version.inc"
-	 "]\nBlame Julian Stecklina <jsteckli@os.inf.tu-dresden.de>\n\n");
+	 "] with " COMPILER COMPILER_VERSION "."
+	 "\nBlame Julian Stecklina <jsteckli@os.inf.tu-dresden.de>\n\n");
 
   bool force = false;
   int  opt;
