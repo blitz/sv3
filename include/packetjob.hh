@@ -2,23 +2,28 @@
 #include <functional>
 #include <header/ethernet.hh>
 
-struct iovec;
-
 namespace Switch {
 
+  class Port;
+
   struct Packet {
-    constexpr static unsigned MAX_FRAGMENTS = 64;
+    constexpr static unsigned MAX_FRAGMENTS = 256;
 
-    uint8_t const *fragment[MAX_FRAGMENTS];
-    uint16_t       fragment_length[MAX_FRAGMENTS];
+    uint8_t  *fragment[MAX_FRAGMENTS];
+    uint16_t  fragment_length[MAX_FRAGMENTS];
 
-    /// Length of packet in bytes.
-    uint16_t packet_length;
+    uint16_t packet_length;	// Length of packet in bytes
+    uint8_t  fragments;		// Number of fragments
+    Port    *src_port;		// Port this packet originated
 
-    /// Number of fragments.
-    uint8_t  fragments;
-
-    std::function<void(Packet &p)> callback;
+    // Port-private data. Set in src_port->poll() and read in
+    // src_port->mark_done(), effectively implementing a poor man's
+    // closure.
+    union {
+      struct {
+	unsigned index;
+      } virtio;
+    };
 
     Ethernet::Header const &ethernet_header() const
     {
@@ -28,7 +33,12 @@ namespace Switch {
       return *reinterpret_cast<Ethernet::Header const *>(fragment[0]);
     }
 
-    void to_iovec(struct iovec *iov) const;
+    void copy_from(Packet const &src);
+
+    Packet(Port *src_port)
+      : packet_length(0), fragments(0),
+	src_port(src_port)
+    { }
   };
 
 }

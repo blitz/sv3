@@ -30,8 +30,20 @@ namespace Switch {
   public:
     std::string const name() const { return _name; }
 
-    virtual void receive(Port &src_port, Packet &p) = 0;
-    virtual bool poll(Packet &p) = 0;
+    /// Receive a packet.
+    virtual void receive(Packet &p) = 0;
+
+    /// Poll for packets. This method has to enable or disable
+    /// notifications according to the given parameter, BEFORE polling
+    /// the guest. Returns true, if p has been populated.
+    virtual bool poll(Packet &p, bool enable_notifications) = 0;
+
+    /// This method is called on a packet returned by poll when the
+    /// switch doesn't need to access packet data anymore.
+    virtual void mark_done(Packet &p) = 0;
+
+    /// Check whether interrupts are pending and deliver them.
+    virtual void poll_irq() = 0;
 
     /// Call this after the instance is completely constructed and
     /// ready to receive packets.
@@ -86,7 +98,8 @@ namespace Switch {
 
 
     bool work_quantum(PortsList const &ports,
-		      SwitchHash      &mac_cache);
+		      SwitchHash      &mac_cache,
+		      bool             enabled_notifications);
 
   public:
 

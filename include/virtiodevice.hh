@@ -13,17 +13,6 @@ namespace Switch {
     VIRTQUEUE_MAX_SIZE = 1024,
   };
 
-  struct VirtQueueElement
-  {
-    unsigned int index;
-    unsigned int out_num;
-    unsigned int in_num;
-    uint64_t in_addr[VIRTQUEUE_MAX_SIZE];
-    uint64_t out_addr[VIRTQUEUE_MAX_SIZE];
-    struct iovec in_sg[VIRTQUEUE_MAX_SIZE];
-    struct iovec out_sg[VIRTQUEUE_MAX_SIZE];
-  };
-
   struct VRingDesc
   {
     uint64_t addr;
@@ -66,23 +55,11 @@ namespace Switch {
     VRing vring;
     uint64_t pa;
     uint16_t last_avail_idx;
-    /* Last used index value we have signalled on */
-    uint16_t signalled_used;
-
-    /* Last used index value we have signalled on */
-    bool signalled_used_valid;
-
-    /* Notification enabled? */
-    bool notification;
-    uint16_t queue_index;
-
     int inuse;
-
     uint16_t vector;
-    // void (*handle_output)(VirtIODevice *vdev, VirtQueue *vq);
 
-    // EventNotifier guest_notifier;
-    // EventNotifier host_notifier;
+    // An entry was added to the used list and IRQs were enabled.
+    bool pending_irq;
   };
 
 
@@ -115,7 +92,18 @@ namespace Switch {
     VirtQueue &tx_vq()   { return vq[1]; }
     VirtQueue &ctrl_vq() { return vq[2]; }
 
-    void vq_set_addr(VirtQueue &vq, uint64_t addr);
+    void     vq_set_addr (VirtQueue &vq,   uint64_t addr);
+    int      vq_num_heads(VirtQueue &vq,   unsigned idx);
+    unsigned vq_get_head (VirtQueue &vq,   unsigned idx);
+    unsigned vq_next_desc(VRingDesc *desc, unsigned max);
+    void     vq_map_sg(struct iovec *sg, uint64_t *addr, size_t num_sg);
+    int      vq_pop      (VirtQueue &vq, Packet &elem, bool writeable_bufs);
+    void     vq_fill     (VirtQueue &vq, Packet const &elem,
+			  unsigned len, unsigned idx);
+    void     vq_flush    (VirtQueue &vq, unsigned count);
+    void     vq_push     (VirtQueue &vq, Packet const &elem,
+			  unsigned len);
+    void     vq_irq      (VirtQueue &vq);
 
   public:
 
@@ -161,8 +149,11 @@ namespace Switch {
     virtual void enable()  override { Port::enable();  online = true; }
     virtual void disable() override { Port::disable(); online = false; }
 
-    virtual void receive(Port &src_port, Packet &p) override;
-    virtual bool poll(Packet &p) override;
+
+    virtual bool poll     (Packet &p, bool enable_notifications) override;
+    virtual void receive  (Packet &p) override;
+    virtual void mark_done(Packet &p) override;
+    virtual void poll_irq ()          override;
 
     VirtioDevice(Session &session);
   };

@@ -33,15 +33,17 @@ namespace Switch {
 
     template<typename P>
     P *translate_ptr(uint64_t addr) {
-      // Do they want to fool us?
-      size_t size = sizeof(P);
+      return reinterpret_cast<P *>(translate_ptr(addr, sizeof(P)));
+    }
 
+    uint8_t *translate_ptr(uint64_t addr, size_t size)
+    {
       if (addr + size <= addr) return nullptr;
 
       for (auto &r : _list) {
 	if (r.addr <= addr and
 	    addr + size < r.addr + r.size)
-	  return reinterpret_cast<P *>(r.mapping + (addr - r.addr));
+	  return r.mapping + (addr - r.addr);
       }
 
       return nullptr;
@@ -75,7 +77,11 @@ namespace Switch {
     VirtioDevice      _device;
 
     template<typename P>
-    P *translate_ptr(uint64_t addr) { return _regions.translate_ptr<P>(addr); }
+    P       *translate_ptr(uint64_t addr)
+    { return _regions.translate_ptr<P>(addr); }
+
+    uint8_t *translate_ptr(uint64_t addr, size_t size)
+    { return _regions.translate_ptr(addr, size); }
 
     /// Check for a message. Shouldn't block.
     bool poll();

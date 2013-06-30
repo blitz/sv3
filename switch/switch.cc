@@ -26,14 +26,15 @@ namespace Switch {
 
   /// Switch a couple of packets. Returns false if we were idle.
   bool Switch::work_quantum(PortsList const &ports,
-			    SwitchHash      &mac_cache)
+			    SwitchHash      &mac_cache,
+			    bool enabled_notifications)
   {
     bool work_done = false;
 
     for (Port *src_port : ports) { // Packet switching loop
+      Packet p(src_port);
 
-      Packet p;
-      if (not src_port->poll(p)) continue;
+      if (not src_port->poll(p, enabled_notifications)) continue;
       // logf("Polling port '%s' returned %u byte packet.", src_port->name(),
       //      p.packet_length);
 
@@ -54,16 +55,20 @@ namespace Switch {
       }
 
       if (LIKELY(dst_port)) {
-	dst_port->receive(*src_port, p);
+	dst_port->receive(p);
       } else {
 	for (Port *dst_port : ports)
 	  if (dst_port != src_port)
-	    dst_port->receive(*src_port, p);
+	    dst_port->receive(p);
       }
 
-      p.callback(p);
+      src_port->mark_done(p);
+
       work_done = true;
     }
+
+    // Deliver interrupts.
+    for (Port *port : ports) port->poll_irq();
 
     return work_done;
   }
@@ -75,7 +80,8 @@ namespace Switch {
     do {			// Main loop
 
       bool work_done;
-      do {			// RCU Loop
+      bool enabled_notifications = false;
+      while (true) {		// RCU Loop
 	rcu_quiescent_state();
 
 	try {
@@ -84,22 +90,42 @@ namespace Switch {
 	  PortsList const &ports     = *rcu_dereference(*pports);
 	  SwitchHash      &mac_cache = *rcu_dereference(_mac_table);
 
-	  work_done = work_quantum(ports, mac_cache);
+	  work_done = work_quantum(ports, mac_cache, enabled_notifications);
 	} catch (PortBrokenException &e) {
 	  detach_port(e.port());
 	  work_done = true;
 	}
-      } while (LIKELY(work_done and not should_shutdown()));
+
+	if (UNLIKELY(not work_done)) {
+	  if (not enabled_notifications) 
+	    // We have seen no action and notifications are off. Reenable
+	    // notifications and poll again.
+	    enabled_notifications = true;
+	  else
+	    // We still haven't seen action and notifications are
+	    // already enabled again. Time to block.
+	    break;
+	} else {
+	  // We have seen work. Time to disable notifications again.
+	  enabled_notifications = false;
+	}
+
+	if (UNLIKELY(should_shutdown()))
+	  goto done;
+      }
 
       // Block
       rcu_thread_offline();
-      uint64_t val;
-      read(_event_fd, &val, sizeof(val));
+      {
+	uint64_t val;
+	read(_event_fd, &val, sizeof(val));
+      }
       rcu_thread_online();
 
 
     } while (not should_shutdown());
 
+  done:
     logf("Main loop returned.");
   }
 
