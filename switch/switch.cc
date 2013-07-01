@@ -218,6 +218,7 @@ namespace Switch {
   Switch::~Switch()
   {
     // Don't need to do anything here for now.
+    logf("Switch destroyed.");
   }
 
 }

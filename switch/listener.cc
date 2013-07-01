@@ -243,8 +243,6 @@ namespace Switch {
   {
     rcu_register_thread();
 
-
-
     do {
       fd_set fdset;
       int    nfds = 0;
@@ -258,7 +256,9 @@ namespace Switch {
       struct timeval to;
       to.tv_sec = 0;
       to.tv_usec = 100000;
+      rcu_thread_offline();
       int res = select(nfds, &fdset, NULL, NULL, &to);
+      rcu_thread_online();
       if (res < 0) {
 	// When our destructor closes _sfd, select() will exit with an
 	// error and we exit the thread.
@@ -282,6 +282,8 @@ namespace Switch {
       }
 
     } while (true);
+
+    rcu_unregister_thread();
   }
 
   Listener::Listener(Switch &sw, bool force) : _sw(sw)
@@ -317,7 +319,9 @@ namespace Switch {
     close(_sfd);
     unlink(_local_addr.sun_path);
 
+    _sw.logf("Waiting for listener thread to join.");
     _thread.join();
+    _sw.logf("Listener thread joined.");
   }
 
 }
