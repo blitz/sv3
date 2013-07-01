@@ -2,6 +2,8 @@
 #include <functional>
 #include <header/ethernet.hh>
 
+#include <virtio-constants.h>
+
 namespace Switch {
 
   class Port;
@@ -27,10 +29,11 @@ namespace Switch {
 
     Ethernet::Header const &ethernet_header() const
     {
-      assert(fragments > 0 and
-             fragment_length[0] >= sizeof(Ethernet::Header));
+      assert(fragments > 1 and
+	     fragment_length[0] == sizeof(struct virtio_net_hdr) and
+             fragment_length[1] >= sizeof(Ethernet::Header));
 
-      return *reinterpret_cast<Ethernet::Header const *>(fragment[0]);
+      return *reinterpret_cast<Ethernet::Header const *>(fragment[1]);
     }
 
     void copy_from(Packet const &src);

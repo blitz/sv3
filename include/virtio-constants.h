@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <compiler.h>
+
 #ifndef  ETH_ALEN
 # define ETH_ALEN 6
 #endif
@@ -174,7 +176,7 @@ struct virtio_net_config
     uint16_t status;
     /* Max virtqueue pairs supported by the device */
     uint16_t max_virtqueue_pairs;
-} QEMU_PACKED;
+} PACKED;
 
 /*
  * Control virtqueue data structures

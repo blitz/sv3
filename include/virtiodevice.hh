@@ -4,8 +4,7 @@
 
 #include <externaldevice.hh>
 #include <switch.hh>
-
-#include <sys/uio.h>		// for struct iovec
+#include <virtio-constants.h>
 
 namespace Switch {
 
@@ -66,8 +65,6 @@ namespace Switch {
   class VirtioDevice final : public ExternalDevice,
 			     public Port
   {
-#include "virtio-constants.h"
-
     enum {
       MSIX_VECTORS = 3,
       VIRT_QUEUES  = 3,
@@ -96,7 +93,6 @@ namespace Switch {
     int      vq_num_heads(VirtQueue &vq,   unsigned idx);
     unsigned vq_get_head (VirtQueue &vq,   unsigned idx);
     unsigned vq_next_desc(VRingDesc *desc, unsigned max);
-    void     vq_map_sg(struct iovec *sg, uint64_t *addr, size_t num_sg);
     int      vq_pop      (VirtQueue &vq, Packet &elem, bool writeable_bufs);
     void     vq_fill     (VirtQueue &vq, Packet const &elem,
 			  unsigned len, unsigned idx);
