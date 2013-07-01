@@ -48,6 +48,7 @@ namespace Switch {
   void
   VirtioDevice::poll_irq()
   {
+    vq_irq(rx_vq());
     vq_irq(tx_vq());
   }
 
