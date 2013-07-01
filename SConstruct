@@ -27,9 +27,12 @@ if 'cxx' in ARGUMENTS:
     print("Forcing host C++ compiler to %s." % ARGUMENTS['cxx'])
     host_env['CXX'] = ARGUMENTS['cxx']
 
+debug_enabled   = (int(ARGUMENTS.get('debug', 1)) == 1)
+lto_enabled     = (int(ARGUMENTS.get('lto', 0)) == 1)
+asserts_enabled = (int(ARGUMENTS.get('asserts', 1)) == 1)
 
 optflags = []
-if int(ARGUMENTS.get('debug', 1)):
+if debug_enabled:
     optflags += ['-O1', '-g']
 else:
     optflags += ['-O3']
@@ -37,11 +40,14 @@ else:
 if int(ARGUMENTS.get('force32', 0)):
     optflags += ['-m32']
 
-if int(ARGUMENTS.get('lto', 0)):
+if lto_enabled:
     optflags += ['-flto']
 
-if int(ARGUMENTS.get('asserts', 1)) == 0:
+if not asserts_enabled:
     host_env.Append(CPPFLAGS = ['-DNDEBUG'])
+
+if not asserts_enabled and lto_enabled and not debug_enabled:
+    host_env.Append(CPPFLAGS = ['-DSV3_BENCHMARK_OK'])
 
 qemusrc = ARGUMENTS.get('qemusrc', '../qemu')
 host_env.Append(CPPPATH = [qemusrc + "/include"])
@@ -57,7 +63,7 @@ if not conf.CheckPKGConfig('0.15.0'):
     print('pkg-config >= 0.15.0 not found.')
     Exit(1)
 
-if int(ARGUMENTS.get('debug', 1)) == 0:
+if not debug_enabled:
     print("Enabling inline versions of Userspace RCU functions.")
     conf.env.Append(CPPFLAGS = ['-D_LGPL_SOURCE']) # to get the static definitions in liburcu
 
@@ -90,7 +96,7 @@ if not conf.CheckHeader('hw/misc/externalpci.h'):
     Exit(1)
 
 if not 'cpu' in ARGUMENTS:
-    opt_cpu = 'corei7'
+    opt_cpu = 'native'
 else:
     opt_cpu = ARGUMENTS['cpu']
 

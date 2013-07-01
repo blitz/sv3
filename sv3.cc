@@ -39,10 +39,15 @@ int main(int argc, char **argv)
 	 "  ____  __|_  / Userspace\n"
 	 " (_-< |/ //_ <  Software\n"
 	 "/___/___/____/  Switch\n\n"
-	 "Built from git revision ["
+	 "Built from git revision "
 #include "version.inc"
-	 "] with " COMPILER COMPILER_VERSION "."
-	 "\nBlame Julian Stecklina <jsteckli@os.inf.tu-dresden.de>\n\n");
+	 " with " COMPILER COMPILER_VERSION ".\n"
+#ifdef SV3_BENCHMARK_OK
+	 "Built with optimal compiler flags. Let the benchmarking commence!\n"
+#else
+	 "Suboptimal compilation flags. Do not use for benchmarking!\n"
+#endif
+	 "Blame Julian Stecklina <jsteckli@os.inf.tu-dresden.de>.\n\n");
 
   bool force = false;
   int  opt;
