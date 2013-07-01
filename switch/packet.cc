@@ -3,15 +3,20 @@
 namespace Switch {
 
   void
-  Packet::copy_from(Packet const &src)
+  Packet::copy_from(Packet const &src, virtio_net_hdr const *hdr)
   {
     Packet  &dst = *this;
-    size_t   dst_i   = 0;
-    uint8_t *dst_ptr = dst.fragment[0];
-    size_t   dst_space = dst.fragment_length[0]; /* Space left in current
+
+    // Copy header
+    assert(dst.fragment_length[0] == sizeof(*hdr));
+    memcpy(dst.fragment[0], hdr, sizeof(*hdr));
+
+    size_t   dst_i     = 1;
+    uint8_t *dst_ptr   = dst.fragment[1];
+    size_t   dst_space = dst.fragment_length[1]; /* Space left in current
 						    destination segment. */
 
-    for (unsigned src_i = 0; src_i < src.fragments; src_i++) {
+    for (unsigned src_i = 1; src_i < src.fragments; src_i++) {
       uint8_t *src_ptr   = src.fragment[src_i];
       size_t   src_space = src.fragment_length[src_i];
 

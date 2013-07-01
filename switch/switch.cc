@@ -67,6 +67,8 @@ namespace Switch {
 	      dst_port->receive(p);
 	}
 
+	// XXX We need to call this even when dst_port->deliver()
+	// throws an exception! Otherwise, src_port is stuck.
 	src_port->mark_done(p);
 
 	work_done = true;
@@ -81,10 +83,12 @@ namespace Switch {
 
   void Switch::loop()
   {
-    logf("Main loop entered.");
 
-    Timer          idle_timer(100000);
+    const unsigned idle_freq    = 10000;
     const unsigned idle_timeout = 5 /* in 10 us */;
+    Timer          idle_timer(idle_freq);
+
+    logf("Main loop entered. Idle poll time is 50us.");
 
     do {			// Main loop
       enum {

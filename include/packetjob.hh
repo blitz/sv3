@@ -36,7 +36,7 @@ namespace Switch {
       return *reinterpret_cast<Ethernet::Header const *>(fragment[1]);
     }
 
-    void copy_from(Packet const &src);
+    void copy_from(Packet const &src, virtio_net_hdr const *hdr);
 
     Packet(Port *src_port)
       : packet_length(0), fragments(0),

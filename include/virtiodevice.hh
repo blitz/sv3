@@ -8,10 +8,6 @@
 
 namespace Switch {
 
-  enum {
-    VIRTQUEUE_MAX_SIZE = 1024,
-  };
-
   struct VRingDesc
   {
     uint64_t addr;
@@ -42,7 +38,9 @@ namespace Switch {
 
   struct VRing
   {
-    unsigned int num;
+    // num is always equal QUEUE_ELEMENTS
+    // unsigned int num;
+
     VRingDesc  *desc;
     VRingAvail *avail;
     VRingUsed  *used;
@@ -68,6 +66,7 @@ namespace Switch {
     enum {
       MSIX_VECTORS = 3,
       VIRT_QUEUES  = 3,
+      QUEUE_ELEMENTS = 1024,
     };
 
     int _irq_fd[MSIX_VECTORS];

@@ -3,10 +3,15 @@
 #include <algorithm>
 #include <unistd.h>
 #include <signal.h>
+#include <getopt.h>
 
 #include <hash/ethernet.hh>
 #include <switch.hh>
 #include <listener.hh>
+#include <config.hh>
+
+/// Signal handling
+
 
 static Switch::Switch *signal_switch;
 static bool            signal_caught;
@@ -21,6 +26,8 @@ static void sigint_handler(int)
     _Exit(EXIT_FAILURE);
   }
 }
+
+/// Main function
 
 #if defined(__GNUC__) && !defined(__clang__)
 # define COMPILER "gcc "
@@ -49,15 +56,29 @@ int main(int argc, char **argv)
 #endif
 	 "Blame Julian Stecklina <jsteckli@os.inf.tu-dresden.de>.\n\n");
 
-  bool force = false;
+  int force               = false;
+
+  static struct option long_options [] = {
+    { "force",               no_argument, &force,                       1 },
+    { "virtio-checksum",     no_argument, &Switch::virtio_checksum,     1 },
+    { "virtio-segmentation", no_argument, &Switch::virtio_segmentation, 1 },
+    { 0, 0, 0, 0 },
+  };
+
+
   int  opt;
-  while ((opt = getopt(argc, argv, "f")) != -1) {
+  int  opt_idx;
+
+  while ((opt = getopt_long(argc, argv, "f", long_options, &opt_idx)) != -1) {
     switch (opt) {
+    case 0:
+      continue;
     case 'f':
       force = true;
       break;
+    case '?':
     default: /* '?' */
-      fprintf(stderr, "Usage: %s [-f]\n", argv[0]);
+      fprintf(stderr, "Usage: %s [-f|--force] [--virtio-{checksum,segmentation}]\n", argv[0]);
       return EXIT_FAILURE;
     }
   }

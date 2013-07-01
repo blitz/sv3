@@ -15,11 +15,39 @@ namespace Switch {
 
     Packet dst_p(nullptr);
     if (UNLIKELY(not vq_pop(rx_vq(), dst_p, true))) {
-      //logf("RX queue empty. Packet dropped.");
+      // logf("RX queue empty. Packet dropped.");
       return;
     }
 
-    dst_p.copy_from(p);
+    if (UNLIKELY(dst_p.fragments < 2 or
+		 dst_p.fragment_length[0] != sizeof(struct virtio_net_hdr)))
+      throw PortBrokenException(*this);
+
+    virtio_net_hdr *src_hdr = reinterpret_cast<virtio_net_hdr *>(p.fragment[0]);
+    virtio_net_hdr  dst_hdr; memset(&dst_hdr, 0, sizeof(dst_hdr));
+
+    // Deal with offloads. Check whether the guest can receive all our
+    // offloads, if not always use the slow path (which is not implemented...).
+
+    const uint32_t fast_path_features = 0
+      | (1 << VIRTIO_NET_F_GUEST_CSUM) 
+      | (1 << VIRTIO_NET_F_GUEST_TSO4)
+      | (1 << VIRTIO_NET_F_GUEST_TSO6)
+      | (1 << VIRTIO_NET_F_GUEST_UFO)
+      | (1 << VIRTIO_NET_F_GUEST_ECN);
+
+    if (UNLIKELY((guest_features & fast_path_features) != fast_path_features)) {
+      // XXX Implement slow path.
+      abort();
+    }
+
+    dst_hdr.flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
+
+    dst_hdr.gso_type = src_hdr->gso_type;
+    dst_hdr.hdr_len  = src_hdr->hdr_len;
+    dst_hdr.gso_size = src_hdr->gso_size;
+
+    dst_p.copy_from(p, &dst_hdr);
 
     vq_push(rx_vq(), dst_p,
 	    std::min(p.packet_length, dst_p.packet_length));
@@ -54,7 +82,7 @@ namespace Switch {
 
     /* Check if guest isn't doing very strange things with descriptor
        numbers. */
-    if (UNLIKELY(num_heads > vq.vring.num))
+    if (UNLIKELY(num_heads > QUEUE_ELEMENTS))
       throw PortBrokenException(*this);
 
     return num_heads;
@@ -67,11 +95,11 @@ namespace Switch {
 
     /* Grab the next descriptor number they're advertising, and increment
      * the index we've seen. */
-    head = __atomic_load_n(&vq.vring.avail->ring[idx % vq.vring.num],
+    head = __atomic_load_n(&vq.vring.avail->ring[idx % QUEUE_ELEMENTS],
 			   __ATOMIC_ACQUIRE);
 
     /* If their number is silly, that's a fatal mistake. */
-    if (UNLIKELY(head >= vq.vring.num))
+    if (UNLIKELY(head >= QUEUE_ELEMENTS))
       throw PortBrokenException(*this);
 
     return head;
@@ -105,7 +133,7 @@ namespace Switch {
     assert(p.fragments     == 0 and
 	   p.packet_length == 0);
 
-    unsigned max = vq.vring.num;
+    unsigned max = QUEUE_ELEMENTS;
     unsigned head;
     unsigned i = head = vq_get_head(vq, vq.last_avail_idx++);
     unsigned fragments = 0;
@@ -145,7 +173,7 @@ namespace Switch {
   VirtioDevice::vq_fill(VirtQueue &vq, Packet const &p,
 			unsigned len, unsigned idx)
   {
-    idx = (idx + vq.vring.used->idx) % vq.vring.num;
+    idx = (idx + vq.vring.used->idx) % QUEUE_ELEMENTS;
 
     /* Get a pointer to the next entry in the used ring. */
     VRingUsedElem &el = vq.vring.used->ring[idx];
@@ -221,15 +249,19 @@ namespace Switch {
     if (UNLIKELY(bar_no != 0)) return val;
 
     switch (addr) {
-    case VIRTIO_PCI_HOST_FEATURES:  val = host_features;  break;
-    case VIRTIO_PCI_GUEST_FEATURES: val = guest_features; break;
+    case VIRTIO_PCI_HOST_FEATURES:  
+      logf("Reading host features %x", host_features);
+      val = host_features;  break;
+    case VIRTIO_PCI_GUEST_FEATURES: 
+      logf("Reading guest features %x", guest_features);
+      val = guest_features; break;
     case VIRTIO_PCI_QUEUE_PFN:
       if (queue_sel < VIRT_QUEUES)
 	val = vq[queue_sel].pa >> VIRTIO_PCI_QUEUE_ADDR_SHIFT;
       break;
     case VIRTIO_PCI_QUEUE_NUM:
       if (queue_sel < VIRT_QUEUES)
-	val = vq[queue_sel].vring.num;
+	val = QUEUE_ELEMENTS;
       break;
     case VIRTIO_PCI_QUEUE_SEL:
       val = queue_sel;
@@ -292,9 +324,9 @@ namespace Switch {
     char *va = _session.translate_ptr<char>(vq.pa);
     if (va != nullptr) {
       vq.vring.desc  = reinterpret_cast<VRingDesc *>(va);
-      vq.vring.avail = reinterpret_cast<VRingAvail *>(va + vq.vring.num * sizeof(VRingDesc));
+      vq.vring.avail = reinterpret_cast<VRingAvail *>(va + QUEUE_ELEMENTS * sizeof(VRingDesc));
       vq.vring.used  = reinterpret_cast<VRingUsed *>(vnet_vring_align(reinterpret_cast<char *>(vq.vring.avail) +
-								       offsetof(VRingAvail, ring[vq.vring.num]),
+								       offsetof(VRingAvail, ring[QUEUE_ELEMENTS]),
 								       VIRTIO_PCI_VRING_ALIGN));
     } else {
       vq.vring.desc  = nullptr;
@@ -348,13 +380,15 @@ namespace Switch {
 	logf("BAD FEATURE set. Guest broken.");
       }
 
-      uint32_t supported_features = 0; /* What do we support? */
+      uint32_t supported_features = host_features; /* What do we support? */
       uint32_t bad = (val & ~supported_features) != 0;
       if (bad)
 	logf("Guest features we don't support: %x.\n", bad);
 
+
       val &= supported_features;
       guest_features = val;
+      logf("Negotiated features: %08x", guest_features);
       break;
     }
     case VIRTIO_PCI_STATUS:
@@ -403,8 +437,7 @@ namespace Switch {
 
     memset(vq, 0, sizeof(vq));
     for (VirtQueue &q : vq) {
-      q.vector = VIRTIO_MSI_NO_VECTOR;
-      q.vring.num = 512;	// 512 elements per queuee
+      q.vector    = VIRTIO_MSI_NO_VECTOR;
     }
 
     // We reattach to the switch, when the guest has pointed us to RX and TX queues.

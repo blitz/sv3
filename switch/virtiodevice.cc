@@ -2,6 +2,7 @@
 #include <virtiodevice.hh>
 #include <switch.hh>
 #include <session.hh>
+#include <config.hh>
 
 #include <sstream>
 
@@ -59,7 +60,22 @@ namespace Switch {
       Port(session._sw, std::string("VirtIO ") + std::to_string(session._fd)),
       _irq_fd(), online(false)
   {
+    // Always announce guest features. Doesn't harm.
+    host_features = (1 << VIRTIO_NET_F_GUEST_CSUM) 
+      | (1 << VIRTIO_NET_F_GUEST_TSO4)
+      | (1 << VIRTIO_NET_F_GUEST_TSO6)
+      | (1 << VIRTIO_NET_F_GUEST_UFO)
+      | (1 << VIRTIO_NET_F_GUEST_ECN);
 
+
+    if (virtio_checksum)
+      host_features |= (1 << VIRTIO_NET_F_CSUM);
+
+    if (virtio_segmentation)
+      host_features |= (1 << VIRTIO_NET_F_HOST_TSO4)
+	| (1 << VIRTIO_NET_F_HOST_TSO6)
+	| (1 << VIRTIO_NET_F_HOST_UFO)
+	| (1 << VIRTIO_NET_F_HOST_ECN);
   }
 
 }
