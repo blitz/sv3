@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <sys/eventfd.h>
 
+#include <timer.hh>
+
 namespace Switch {
 
   void Switch::logf(char const *str, ...)
@@ -29,42 +31,46 @@ namespace Switch {
 			    SwitchHash      &mac_cache,
 			    bool enabled_notifications)
   {
-    bool work_done = false;
+    const unsigned packets_per_port = 16;
+    bool work_done                  = false;
 
     for (Port *src_port : ports) { // Packet switching loop
-      Packet p(src_port);
 
-      if (not src_port->poll(p, enabled_notifications)) continue;
-      // logf("Polling port '%s' returned %u byte packet.", src_port->name(),
-      //      p.packet_length);
+      for (unsigned quota = packets_per_port; quota > 0; quota--) {
+	Packet p(src_port);
 
-      auto &ehdr = p.ethernet_header();
-      // logf("Destination %s", ehdr.dst.to_str());
-      // logf("Source      %s", ehdr.src.to_str());
+	if (not src_port->poll(p, enabled_notifications)) break;
+	// logf("Polling port '%s' returned %u byte packet.", src_port->name().c_str(),
+	//      p.packet_length);
 
-      Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? mac_cache[ehdr.dst] : nullptr;
-      assert(dst_port != src_port);
+	auto &ehdr = p.ethernet_header();
+	// logf("Destination %s", ehdr.dst.to_str());
+	// logf("Source      %s", ehdr.src.to_str());
 
-      if (LIKELY(not ehdr.src.is_multicast())) {
-	// if (mac_cache[ehdr.src] != src_port)
-	//   logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
-	//        Ethernet::hash(ehdr.src),
-	//        src_port->name());
+	Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? mac_cache[ehdr.dst] : nullptr;
+	assert(dst_port != src_port);
 
-	mac_cache.add(ehdr.src, src_port);
+	if (LIKELY(not ehdr.src.is_multicast())) {
+	  if (UNLIKELY(mac_cache[ehdr.src] != src_port))
+	    logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
+	         Ethernet::hash(ehdr.src),
+	         src_port->name().c_str());
+
+	  mac_cache.add(ehdr.src, src_port);
+	}
+
+	if (LIKELY(dst_port)) {
+	  dst_port->receive(p);
+	} else {
+	  for (Port *dst_port : ports)
+	    if (dst_port != src_port)
+	      dst_port->receive(p);
+	}
+
+	src_port->mark_done(p);
+
+	work_done = true;
       }
-
-      if (LIKELY(dst_port)) {
-	dst_port->receive(p);
-      } else {
-	for (Port *dst_port : ports)
-	  if (dst_port != src_port)
-	    dst_port->receive(p);
-      }
-
-      src_port->mark_done(p);
-
-      work_done = true;
     }
 
     // Deliver interrupts.
@@ -77,11 +83,18 @@ namespace Switch {
   {
     logf("Main loop entered.");
 
-    do {			// Main loop
+    Timer          idle_timer(100000);
+    const unsigned idle_timeout = 5 /* in 10 us */;
 
-      bool work_done;
-      bool enabled_notifications = false;
-      while (true) {		// RCU Loop
+    do {			// Main loop
+      enum {
+	WORK,
+	IDLE,
+	NOTIFICATION_ENABLE,
+      } state = WORK;
+      
+      while (LIKELY(not should_shutdown())) { // RCU Loop
+	bool work_done = false;
 	rcu_quiescent_state();
 
 	try {
@@ -90,42 +103,54 @@ namespace Switch {
 	  PortsList const &ports     = *rcu_dereference(*pports);
 	  SwitchHash      &mac_cache = *rcu_dereference(_mac_table);
 
-	  work_done = work_quantum(ports, mac_cache, enabled_notifications);
+	  work_done = work_quantum(ports, mac_cache, state == NOTIFICATION_ENABLE);
 	} catch (PortBrokenException &e) {
 	  detach_port(e.port());
 	  work_done = true;
 	}
 
-	if (UNLIKELY(not work_done)) {
-	  if (not enabled_notifications) 
-	    // We have seen no action and notifications are off. Reenable
-	    // notifications and poll again.
-	    enabled_notifications = true;
-	  else
-	    // We still haven't seen action and notifications are
-	    // already enabled again. Time to block.
-	    break;
-	} else {
-	  // We have seen work. Time to disable notifications again.
-	  enabled_notifications = false;
+	// We have seen action.
+	if (LIKELY(work_done)) {
+	  state = WORK;
+	  continue;
 	}
-
-	if (UNLIKELY(should_shutdown()))
-	  goto done;
+	
+	switch (state) {
+	case WORK:
+	  // The switch was idle for the first time. Start the idle
+	  // clock.
+	  assert(not work_done);
+	  state = IDLE;
+	  idle_timer.arm();
+	  break;
+	case IDLE:
+	  if (idle_timer.elapsed(idle_timeout)) {
+	    // We have been idle for the maximum idle
+	    // duration. Reenable notifications so we can block.
+	    state = NOTIFICATION_ENABLE;
+	  }
+	  continue;
+	case NOTIFICATION_ENABLE:
+	  // We still haven't seen action and notifications are
+	  // already enabled. Time to block.
+	  goto block;
+	}
       }
+    block:
 
       // Block
       rcu_thread_offline();
       {
 	uint64_t val;
-	read(_event_fd, &val, sizeof(val));
+	int r = read(_event_fd, &val, sizeof(val));
+	if (r != sizeof(val))
+	  break;
       }
       rcu_thread_online();
 
 
     } while (not should_shutdown());
 
-  done:
     logf("Main loop returned.");
   }
 

@@ -11,21 +11,13 @@ namespace Switch {
   {
     assert(p.src_port != this);
 
-    logf("Receiving %u bytes in %u fragments.",
-	 p.packet_length,
-	 p.fragments);
-
     if (UNLIKELY(not (status & VIRTIO_CONFIG_S_DRIVER_OK))) return;
 
     Packet dst_p(nullptr);
     if (UNLIKELY(not vq_pop(rx_vq(), dst_p, true))) {
-      logf("RX queue empty. Packet dropped.\n");
+      //logf("RX queue empty. Packet dropped.");
       return;
     }
-
-    logf("Popped %u bytes in %u fragments.",
-	 dst_p.packet_length,
-	 dst_p.fragments);
 
     dst_p.copy_from(p);
 
@@ -145,10 +137,6 @@ namespace Switch {
     p.virtio.index = head;
 
     vq.inuse++;
-
-    logf("Sending %u bytes in %u fragments.",
-	 p.packet_length,
-	 p.fragments);
 
     return fragments;
   }
