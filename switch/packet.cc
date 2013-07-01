@@ -23,11 +23,18 @@ namespace Switch {
       do {
 	size_t chunk = std::min(dst_space, src_space);
 
-	memcpy(dst_ptr, src_ptr, chunk);
+	unsigned ecx = chunk;
+	asm volatile ("rep; movsb"
+		      : "+D" (dst_ptr),
+			"+S" (src_ptr),
+			"+c" (ecx)
+		      :
+		      : "memory");
+	// memcpy(dst_ptr, src_ptr, chunk);
 
-	src_ptr    += chunk;
+	// src_ptr    += chunk;
 	src_space  -= chunk;
-	dst_ptr    += chunk;
+	// dst_ptr    += chunk;
 	dst_space  -= chunk;
 
 	if (dst_space == 0) {
