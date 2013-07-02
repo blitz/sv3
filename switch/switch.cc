@@ -25,7 +25,6 @@ namespace Switch {
     write(_event_fd, &val, sizeof(val));
   }
 
-
   /// Switch a couple of packets. Returns false if we were idle.
   bool Switch::work_quantum(PortsList const &ports,
 			    SwitchHash      &mac_cache,
@@ -53,8 +52,8 @@ namespace Switch {
 	if (LIKELY(not ehdr.src.is_multicast())) {
 	  if (UNLIKELY(mac_cache[ehdr.src] != src_port))
 	    logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
-	         Ethernet::hash(ehdr.src),
-	         src_port->name().c_str());
+		 Ethernet::hash(ehdr.src),
+		 src_port->name().c_str());
 
 	  mac_cache.add(ehdr.src, src_port);
 	}
@@ -98,7 +97,7 @@ namespace Switch {
 	IDLE,
 	NOTIFICATION_ENABLE,
       } state = WORK;
-      
+
       while (LIKELY(not should_shutdown())) { // RCU Loop
 	bool work_done = false;
 	rcu_quiescent_state();
@@ -120,7 +119,7 @@ namespace Switch {
 	  state = WORK;
 	  continue;
 	}
-	
+
 	switch (state) {
 	case WORK:
 	  // The switch was idle for the first time. Start the idle
