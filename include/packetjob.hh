@@ -14,7 +14,7 @@ namespace Switch {
     uint8_t  *fragment[MAX_FRAGMENTS];
     uint16_t  fragment_length[MAX_FRAGMENTS];
 
-    uint16_t packet_length;	// Length of packet in bytes
+    uint32_t packet_length;	// Length of packet in bytes
     uint8_t  fragments;		// Number of fragments
     Port    *src_port;		// Port this packet originated
 

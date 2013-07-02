@@ -49,8 +49,8 @@ namespace Switch {
 
     dst_p.copy_from(p, &dst_hdr);
 
-    vq_push(rx_vq(), dst_p,
-	    std::min(p.packet_length, dst_p.packet_length));
+    uint16_t plen = std::min(p.packet_length, dst_p.packet_length);
+    vq_push(rx_vq(), dst_p, plen);
   }
 
   void
@@ -171,7 +171,7 @@ namespace Switch {
 
   void
   VirtioDevice::vq_fill(VirtQueue &vq, Packet const &p,
-			unsigned len, unsigned idx)
+			uint32_t len, unsigned idx)
   {
     idx = (idx + vq.vring.used->idx) % QUEUE_ELEMENTS;
 
@@ -207,7 +207,7 @@ namespace Switch {
 
   void VirtioDevice::vq_push(VirtQueue &vq,
 			     Packet const &p,
-			     unsigned len)
+			     uint32_t len)
   {
     vq_fill(vq, p, len, 0);
     vq_flush(vq, 1);

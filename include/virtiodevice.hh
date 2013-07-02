@@ -94,10 +94,10 @@ namespace Switch {
     unsigned vq_next_desc(VRingDesc *desc, unsigned max);
     int      vq_pop      (VirtQueue &vq, Packet &elem, bool writeable_bufs);
     void     vq_fill     (VirtQueue &vq, Packet const &elem,
-			  unsigned len, unsigned idx);
+			  uint32_t len, unsigned idx);
     void     vq_flush    (VirtQueue &vq, unsigned count);
     void     vq_push     (VirtQueue &vq, Packet const &elem,
-			  unsigned len);
+			  uint32_t len);
     void     vq_irq      (VirtQueue &vq);
 
   public:
