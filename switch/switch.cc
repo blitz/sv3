@@ -59,6 +59,11 @@ namespace Switch {
 	  mac_cache.add(ehdr.src, src_port);
 	}
 
+	// Mark the packet as done when we leave this scope. We make
+	// sure to call this even if one of the receive() methods
+	// throws an exception.
+	Finally<Port, void, Packet &> when_done(src_port, &Port::mark_done, p);
+
 	if (LIKELY(dst_port)) {
 	  dst_port->receive(p);
 	} else {
@@ -67,11 +72,8 @@ namespace Switch {
 	      dst_port->receive(p);
 	}
 
-	// XXX We need to call this even when dst_port->deliver()
-	// throws an exception! Otherwise, src_port is stuck.
-	src_port->mark_done(p);
-
 	work_done = true;
+	// src_port->mark_done() is called here.
       }
     }
 
