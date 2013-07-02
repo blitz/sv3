@@ -68,14 +68,18 @@ namespace Switch {
       | (1 << VIRTIO_NET_F_GUEST_ECN);
 
 
-    if (virtio_checksum)
+    if (virtio_checksum) {
+      logf("Enabling checksum offload.");
       host_features |= (1 << VIRTIO_NET_F_CSUM);
+    }
 
-    if (virtio_segmentation)
+    if (virtio_segmentation) {
+      logf("Enabling segmentation offload.");
       host_features |= (1 << VIRTIO_NET_F_HOST_TSO4)
 	| (1 << VIRTIO_NET_F_HOST_TSO6)
 	| (1 << VIRTIO_NET_F_HOST_UFO)
 	| (1 << VIRTIO_NET_F_HOST_ECN);
+    }
   }
 
 }
