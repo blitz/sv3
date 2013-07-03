@@ -12,6 +12,20 @@ import csv
 
 
 qemu_bin  = "../../qemu/x86_64-softmmu/qemu-system-x86_64"
+
+if not os.path.exists(qemu_bin):
+    print("Qemu not found at: " + qemu_bin)
+    exit(1)
+
+try:
+    with open('/dev/vhost-net'): pass
+except IOError as e:
+    print(str(e))
+    print("Is the vhost_net module loaded?")
+    print("If it is a permission problem, add yourself to the kvm group and add this udev rule:")
+    print(' SUBSYSTEM=="misc", KERNEL=="vhost-net", GROUP="kvm", MODE="0660"')
+    exit(1)
+
 qemu_generic = "-enable-kvm -m 2048 -nographic -kernel ../../buildroot/output/images/bzImage -append quiet\ console=ttyS0"
 
 class StdDev:
@@ -160,13 +174,15 @@ def create_macvtap(netif, macvtap, mac):
     output, ex = e.run("sudo ip link add link %s name %s address %s type macvtap mode bridge" % (netif, macvtap, mac),
                        withexitstatus = True)
     if ex != 0:
-        print(output)
+        print(("Creating '%s' failed:" % macvtap) + output, end="")
         raise CommandFailed()
     e.run("sudo ip link set dev %s up" % macvtap)
     tap_files = glob.glob("/sys/class/net/%s/tap*" % macvtap)
     assert len(tap_files) == 1
     devnode = "/dev/" + os.path.basename(tap_files[0])
     print(e.run("ls -l %s" % devnode), end="")
+    print("If it looks like you don't have permissions to access this, use this udev rule:")
+    print('SUBSYSTEM=="macvtap", GROUP="kvm", MODE="0660"')
     time.sleep(1)
     return devnode
 
@@ -175,8 +191,6 @@ def delete_macvtap(macvtap):
 
 def run_vhost_benchmark():
     print("\n--- vhost ---")
-    print(e.run("ls -l /dev/vhost-net"), end="")
-
     cleanup_fn = []
     netif="eth0"
     try:
@@ -213,8 +227,9 @@ print("Let the benchmarking commence!")
 
 #client.logfile = sys.stdout
 
-vhost_results       = run_vhost_benchmark()
 externalpci_results = run_externalpci_benchmark()
+vhost_results       = run_vhost_benchmark()
+
 
 with open('results.csv', 'wb') as csvfile:
     writer = csv.writer(csvfile)
