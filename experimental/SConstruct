@@ -1,0 +1,9 @@
+# -*- Mode: Python -*-
+
+Program('eventfd-benchmark', ['eventfd-benchmark.cc'],
+        CXXFLAGS  = "-O3 -flto -std=c++11 -pthread ",
+        LINKFLAGS = "-O3 -flto -pthread ")
+
+Program('spinning-enqueue', ['spinning-enqueue.c'],
+        CFLAGS    = " -O3 -flto -std=gnu99 ",
+        LINKFLAGS = " -O3 -flto ")
