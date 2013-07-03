@@ -9,24 +9,35 @@ import glob
 import time
 import pexpect as e
 import csv
-
+import argparse
 
 qemu_bin  = "../../qemu/x86_64-softmmu/qemu-system-x86_64"
-
-if not os.path.exists(qemu_bin):
-    print("Qemu not found at: " + qemu_bin)
-    exit(1)
-
-try:
-    with open('/dev/vhost-net'): pass
-except IOError as e:
-    print(str(e))
-    print("Is the vhost_net module loaded?")
-    print("If it is a permission problem, add yourself to the kvm group and add this udev rule:")
-    print(' SUBSYSTEM=="misc", KERNEL=="vhost-net", GROUP="kvm", MODE="0660"')
-    exit(1)
-
 qemu_generic = "-enable-kvm -m 2048 -nographic -kernel ../../buildroot/output/images/bzImage -append quiet\ console=ttyS0"
+
+def check_setup():
+    try:
+        scaling_governor =  open("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").read()
+        if scaling_governor != "performance\n":
+            print("CPU frequency scaling in effect! Scaling governor is set to: " + scaling_governor, end="")
+            exit(1)
+        else:
+            print("CPU frequency scaling is set to performance. Good.")
+    except IOError as e:
+        print("Could not check your frequency scaling settings!")
+        print(str(e))
+    
+    if not os.path.exists(qemu_bin):
+        print("Qemu not found at: " + qemu_bin)
+        exit(1)
+
+    try:
+        with open('/dev/vhost-net'): pass
+    except IOError as e:
+        print(str(e))
+        print("Is the vhost_net module loaded?")
+        print("If it is a permission problem, add yourself to the kvm group and add this udev rule:")
+        print(' SUBSYSTEM=="misc", KERNEL=="vhost-net", GROUP="kvm", MODE="0660"')
+        exit(1)
 
 class StdDev:
     def update(self, value):
@@ -223,20 +234,21 @@ def run_vhost_benchmark():
         for f in cleanup_fn:
             f()
 
-print("Let the benchmarking commence!")
 
-#client.logfile = sys.stdout
+def main():
+    check_setup()
 
-externalpci_results = run_externalpci_benchmark()
-vhost_results       = run_vhost_benchmark()
+    print("Let the benchmarking commence!")
 
+    externalpci_results = run_externalpci_benchmark()
+    vhost_results       = run_vhost_benchmark()
 
-with open('results.csv', 'wb') as csvfile:
-    writer = csv.writer(csvfile)
-    for r in externalpci_results + vhost_results:
-        writer.writerow(r)
+    with open('results.csv', 'wb') as csvfile:
+        writer = csv.writer(csvfile)
+        for r in externalpci_results + vhost_results:
+            writer.writerow(r)
 
+if __name__ == "__main__":
+    main()
 
-
-
-        
+# EOF
