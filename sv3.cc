@@ -59,9 +59,9 @@ int main(int argc, char **argv)
   int force               = false;
 
   static struct option long_options [] = {
-    { "force",               no_argument, &force,                       1 },
-    { "virtio-checksum",     no_argument, &Switch::virtio_checksum,     1 },
-    { "virtio-segmentation", no_argument, &Switch::virtio_segmentation, 1 },
+    { "force",            no_argument, &force,                       1 },
+    { "no-checksum",      no_argument, &Switch::virtio_checksum,     0 },
+    { "no--segmentation", no_argument, &Switch::virtio_segmentation, 0 },
     { 0, 0, 0, 0 },
   };
 

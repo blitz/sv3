@@ -2,8 +2,8 @@
 #include <config.hh>
 
 namespace Switch {
-  int virtio_checksum     = false;
-  int virtio_segmentation = false;
+  int virtio_checksum     = true;
+  int virtio_segmentation = true;
 }
 
 // EOF
