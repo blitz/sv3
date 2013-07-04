@@ -11,6 +11,8 @@ import pexpect as e
 import csv
 import argparse
 
+import topology
+
 qemu_bin  = "../../qemu/x86_64-softmmu/qemu-system-x86_64"
 qemu_generic = "-enable-kvm -m 2048 -nographic -kernel ../../buildroot/output/images/bzImage -append quiet\ console=ttyS0"
 
@@ -251,9 +253,23 @@ def run_vhost_benchmark():
         for f in cleanup_fn:
             f()
 
+def thread_list_to_str(tl):
+    return ",".join([str(t.id) for t in tl])
 
 def main():
     check_setup()
+
+    topo = topology.get_topology()
+    print("Topology: %u Package x %u Cores x %u Threads" % (len(topo), len(topo[0].core), len(topo[0].core[0].thread)))
+
+    if (len(topo[-1].core) < 3):
+        print("We need 3 cores in a package for optimal thread pinning.")
+        exit(1)
+    
+    # Select last three cores (hoping that there is the least IRQ
+    # activity) and their respective threads for our three components
+    [switch_cpus, server_cpus, client_cpus] = [thread_list_to_str(c.thread) for c in topo[-1].core[-3:]]
+    print("Switch on %s. Server on %s. Client on %s." % (switch_cpus, server_cpus, client_cpus))
 
     print("Let the benchmarking commence!")
 
