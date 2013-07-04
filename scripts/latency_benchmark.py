@@ -97,8 +97,8 @@ def create_and_configure(qemu_cmd, is_server):
     if is_server:
         p.sendline("netserver")
         p.expect_exact(r"Starting netserver with host 'IN(6)ADDR_ANY' port '12865' and family AF_UNSPEC")
-        p.sendline("iperf -s")
-        p.expect_exact("Server listening on TCP port 5001")
+        # p.sendline("iperf -s")
+        # p.expect_exact("Server listening on TCP port 5001")
     return p
 
 def netperf_rr_like(client, test):
@@ -135,23 +135,40 @@ def repeat_benchmark(name, repeat, thunk):
     print("%s: %s" % (name, stddev_gen.format()))
     return result
 
+def set_tso(session, enable):
+    on_off = "on" if enable else "off"
+    ethtool_cmd = "ethtool -K eth0 tx-tcp-segmentation %s tx-tcp-ecn-segmentation %s tx-tcp6-segmentation %s"
+    session.sendline(ethtool_cmd % ((on_off,)*3))
+    # Check whether we configured correctly
+    session.sendline("ethtool -k eth0")
+    session.expect_exact("tcp-segmentation-offload: %s" % on_off)
+
 
 repeat = 20
 def run_benchmark(prefix, client, server):
-    return [
-        [prefix + "_tcp_stream"] + repeat_benchmark("TCP Stream", repeat,
-                                                    lambda: netperf_stream_like(client, "TCP_STREAM")),
+    results =  [
         [prefix + "_udp_rr"] + repeat_benchmark("UDP Request/Response", repeat,
                                                lambda: 1000000/netperf_rr_like(client, "UDP_RR")),
         [prefix + "_tcp_rr"] + repeat_benchmark("TCP Request/Response", repeat,
                                                lambda: 1000000/netperf_rr_like(client, "TCP_RR")),
-        # [prefix + "_tcp_cc"] + repeat_benchmark("TCP Connect/Close", repeat,
-        #                                        lambda: 1000000/netperf_rr_like(client, "TCP_CC")),
-        # [prefix + "_tcp_crr"] + repeat_benchmark("TCP Connect/Request/Response", repeat,
-        #                                          lambda: 1000000/netperf_rr_like(client, "TCP_CRR")),
-
+        [prefix + "_tcp_cc"] + repeat_benchmark("TCP Connect/Close", repeat,
+                                               lambda: 1000000/netperf_rr_like(client, "TCP_CC")),
+        [prefix + "_tcp_crr"] + repeat_benchmark("TCP Connect/Request/Response", repeat,
+                                               lambda: 1000000/netperf_rr_like(client, "TCP_CRR")),
         ]
-
+    set_tso(client, True)
+    set_tso(server, True)
+    results.append([prefix + "_tcp_stream_tso"] + repeat_benchmark("TCP Stream (TSO)", repeat,
+                                                                   lambda: netperf_stream_like(client, "TCP_STREAM")))
+    results.append([prefix + "_tcp_maerts_tso"] + repeat_benchmark("TCP Maerts (TSO)", repeat,
+                                                                   lambda: netperf_stream_like(client, "TCP_MAERTS")))
+    set_tso(client, False)
+    set_tso(server, False)
+    results.append([prefix + "_tcp_stream"] + repeat_benchmark("TCP Stream", repeat,
+                                                                   lambda: netperf_stream_like(client, "TCP_STREAM")))
+    results.append([prefix + "_tcp_maerts"] + repeat_benchmark("TCP Maerts", repeat,
+                                                                   lambda: netperf_stream_like(client, "TCP_MAERTS")))
+    return results
 
 def run_externalpci_benchmark():
     print("\n--- externalpci ---")
