@@ -29,9 +29,9 @@ namespace Switch {
 
     Ethernet::Header const &ethernet_header() const
     {
-      assert(fragments > 1 and
-	     fragment_length[0] == sizeof(struct virtio_net_hdr) and
-             fragment_length[1] >= sizeof(Ethernet::Header));
+      assert(fragments > 1);
+      assert(fragment_length[0] == sizeof(struct virtio_net_hdr));
+      assert(fragment_length[1] >= sizeof(Ethernet::Header));
 
       return *reinterpret_cast<Ethernet::Header const *>(fragment[1]);
     }
