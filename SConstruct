@@ -49,7 +49,7 @@ if not asserts_enabled:
 if not asserts_enabled and lto_enabled and not debug_enabled:
     host_env.Append(CPPFLAGS = ['-DSV3_BENCHMARK_OK'])
 
-qemusrc = ARGUMENTS.get('qemusrc', '../qemu')
+qemusrc = ARGUMENTS.get('qemusrc', 'contrib/qemu')
 host_env.Append(CPPPATH = [qemusrc + "/include"])
 
 host_env.Append(CCFLAGS = optflags, LINKFLAGS = optflags)
