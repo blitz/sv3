@@ -13,8 +13,10 @@ import argparse
 
 import topology
 
-qemu_bin  = "../../qemu/x86_64-softmmu/qemu-system-x86_64"
-qemu_generic = "-enable-kvm -m 2048 -nographic -kernel ../../buildroot/output/images/bzImage -append quiet\ console=ttyS0"
+net_if    = "eth0"
+qemu_bin  = "../contrib/qemu/x86_64-softmmu/qemu-system-x86_64"
+linux_bin = "../contrib/buildroot/buildroot/output/images/bzImage"
+qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -append quiet\ console=ttyS0"
 
 def check_setup():
     try:
@@ -91,7 +93,7 @@ def create_and_configure(qemu_cmd, is_server):
     p.expect_exact("buildroot login: ")
     p.sendline("root")
     p.expect("\r\n")
-    p.sendline("ifconfig eth0 up %s && echo return $?" % ("10.0.0.1" if is_server else "10.0.0.2"))
+    p.sendline("ifconfig %s up %s && echo return $?" % (net_if, "10.0.0.1" if is_server else "10.0.0.2"))
     r = p.expect (["return 0", "No such device"])
     if r != 0:
         print("Network configuration failed: %d" % r, file=sys.stderr)
@@ -256,24 +258,30 @@ def run_vhost_benchmark():
 def thread_list_to_str(tl):
     return ",".join([str(t.id) for t in tl])
 
-def main():
+def main(args):
     check_setup()
 
     topo = topology.get_topology()
     print("Topology: %u Package x %u Cores x %u Threads" % (len(topo), len(topo[0].core), len(topo[0].core[0].thread)))
 
     if (len(topo[-1].core) < 3):
-        print("We need 3 cores in a package for optimal thread pinning.")
-        exit(1)
+        print("ERROR: We need 3 cores in a package for optimal thread pinning.")
+        if not "--ignore-warnings" in args:
+            exit(1)
+        any_cpu = "1-64"
+        switch_cpus = any_cpu
+        server_cpus = any_cpu
+        client_cpus = any_cpu
+    else:
+        # Select last three cores (hoping that there is the least IRQ
+        # activity) and their respective threads for our three components
+        [switch_cpus, server_cpus, client_cpus] = [thread_list_to_str(c.thread) for c in topo[-1].core[-3:]]
     
-    # Select last three cores (hoping that there is the least IRQ
-    # activity) and their respective threads for our three components
-    [switch_cpus, server_cpus, client_cpus] = [thread_list_to_str(c.thread) for c in topo[-1].core[-3:]]
     print("Switch on %s. Server on %s. Client on %s." % (switch_cpus, server_cpus, client_cpus))
 
     print("Let the benchmarking commence!")
 
-    externalpci_results = run_externalpci_benchmark()
+    externalpci_results = [] #run_externalpci_benchmark()
     vhost_results       = run_vhost_benchmark()
 
     with open('results.csv', 'wb') as csvfile:
@@ -282,6 +290,6 @@ def main():
             writer.writerow(r)
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)
 
 # EOF
