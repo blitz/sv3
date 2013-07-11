@@ -92,6 +92,10 @@ namespace Switch {
     int      vq_num_heads(VirtQueue &vq,   unsigned idx);
     unsigned vq_get_head (VirtQueue &vq,   unsigned idx);
     unsigned vq_next_desc(VRingDesc *desc, unsigned max);
+
+    template <typename T>
+    int      vq_pop_generic(VirtQueue &vq, bool writeable_bufs, T closure);
+
     int      vq_pop      (VirtQueue &vq, Packet &elem, bool writeable_bufs);
     void     vq_fill     (VirtQueue &vq, Packet const &elem,
 			  uint32_t len, unsigned idx);

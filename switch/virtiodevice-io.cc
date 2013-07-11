@@ -121,21 +121,18 @@ namespace Switch {
     return next;
   }
 
+  template <typename T>
   int
-  VirtioDevice::vq_pop(VirtQueue &vq, Packet &p,
-		       bool writeable_bufs)
+  VirtioDevice::vq_pop_generic(VirtQueue &vq, bool writeable_bufs,
+                               T closure)
   {
     VRingDesc *desc = vq.vring.desc;
 
-    if (!vq_num_heads(vq, vq.last_avail_idx))
-      return 0;
-
-    assert(p.fragments     == 0 and
-	   p.packet_length == 0);
+    if (!vq_num_heads(vq, vq.last_avail_idx)) return 0;
 
     unsigned max = QUEUE_ELEMENTS;
     unsigned head;
-    unsigned i = head = vq_get_head(vq, vq.last_avail_idx++);
+    unsigned i = head = this->vq_get_head(vq, vq.last_avail_idx++);
     unsigned fragments = 0;
 
     /* Collect all the descriptors */
@@ -154,19 +151,35 @@ namespace Switch {
 		   (data == nullptr)))
 	throw PortBrokenException(*this);
 
-      p.fragment[fragments]        = data;
-      p.fragment_length[fragments] = flen;
+      if (closure(head, data, flen))
+        break;
 
-      p.packet_length += flen;
-      fragments       += 1;
     } while ((i = vq_next_desc(&desc[i], max)) != max);
 
-    p.fragments = fragments;
-    p.virtio.index = head;
-
     vq.inuse++;
+    return head;
+  }
 
-    return fragments;
+
+  int
+  VirtioDevice::vq_pop(VirtQueue &vq, Packet &p,
+		       bool writeable_bufs)
+  {
+    assert(p.fragments     == 0 and
+	   p.packet_length == 0);
+
+    p.virtio.index = vq_pop_generic(vq, writeable_bufs,
+                                    [&p] (unsigned head, uint8_t *data, uint32_t flen) {
+                                      p.fragment[p.fragments]        = data;
+                                      p.fragment_length[p.fragments] = flen;
+
+                                      p.packet_length += flen;
+                                      p.fragments     += 1;
+
+                                      return false; // We want more
+                                    });
+
+    return p.fragments;
   }
 
   void
