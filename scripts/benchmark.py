@@ -93,7 +93,7 @@ def create_and_configure(qemu_cmd, is_server):
     p.expect_exact("buildroot login: ")
     p.sendline("root")
     p.expect("\r\n")
-    p.sendline("ifconfig %s up %s && echo return $?" % (net_if, "10.0.0.1" if is_server else "10.0.0.2"))
+    p.sendline("ifconfig eth0 up %s && echo return $?" % ("10.0.0.1" if is_server else "10.0.0.2"))
     r = p.expect (["return 0", "No such device"])
     if r != 0:
         print("Network configuration failed: %d" % r, file=sys.stderr)
@@ -224,22 +224,21 @@ def delete_macvtap(macvtap):
 def run_vhost_benchmark():
     print("\n--- vhost ---")
     cleanup_fn = []
-    netif="eth0"
     try:
         def mt(name, tapname, mac):
-            tap = create_macvtap(netif, tapname, mac)
+            tap = create_macvtap(net_if, tapname, mac)
             cleanup_fn.append(lambda: delete_macvtap(tapname))
             return tap
 
         client_mac = "1a:54:0b:ca:bc:10"
         client_macvtap = "macvtap0"
         qemu_vhost_args = " -netdev type=tap,id=guest,vhost=on,fd=3 -device virtio-net-pci,netdev=guest,mac=%s  3<>%s"
-        qemu_vhost_client_args = qemu_vhost_args % (client_mac, mt(netif, client_macvtap, client_mac))
+        qemu_vhost_client_args = qemu_vhost_args % (client_mac, mt(net_if, client_macvtap, client_mac))
         client = create_and_configure("%s %s %s" % (qemu_bin, qemu_generic, qemu_vhost_client_args), False)
 
         server_mac = "1a:54:0b:ca:bc:20"
         server_macvtap = "macvtap1"
-        qemu_vhost_server_args = qemu_vhost_args % (server_mac, mt(netif, server_macvtap, server_mac))
+        qemu_vhost_server_args = qemu_vhost_args % (server_mac, mt(net_if, server_macvtap, server_mac))
         server = create_and_configure("%s %s %s" % (qemu_bin, qemu_generic, qemu_vhost_server_args), True)
 
         try:
