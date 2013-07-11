@@ -13,19 +13,6 @@ namespace Switch {
 
     if (UNLIKELY(not (status & VIRTIO_CONFIG_S_DRIVER_OK))) return;
 
-    Packet dst_p(nullptr);
-    if (UNLIKELY(not vq_pop(rx_vq(), dst_p, true))) {
-      // logf("RX queue empty. Packet dropped.");
-      return;
-    }
-
-    if (UNLIKELY(dst_p.fragments < 2 or
-		 dst_p.fragment_length[0] != sizeof(struct virtio_net_hdr)))
-      throw PortBrokenException(*this);
-
-    virtio_net_hdr *src_hdr = reinterpret_cast<virtio_net_hdr *>(p.fragment[0]);
-    virtio_net_hdr  dst_hdr; memset(&dst_hdr, 0, sizeof(dst_hdr));
-
     // Deal with offloads. Check whether the guest can receive all our
     // offloads, if not always use the slow path (which is not implemented...).
 
@@ -40,6 +27,21 @@ namespace Switch {
       // XXX Implement slow path.
       abort();
     }
+
+    Packet dst_p(nullptr);
+
+    // XXX Use vq_pop_generic to fetch not more descriptors than we need.
+    if (UNLIKELY(not vq_pop(rx_vq(), dst_p, true))) {
+      // logf("RX queue empty. Packet dropped.");
+      return;
+    }
+
+    if (UNLIKELY(dst_p.fragments < 2 or
+		 dst_p.fragment_length[0] != sizeof(struct virtio_net_hdr)))
+      throw PortBrokenException(*this);
+
+    virtio_net_hdr *src_hdr = reinterpret_cast<virtio_net_hdr *>(p.fragment[0]);
+    virtio_net_hdr  dst_hdr; memset(&dst_hdr, 0, sizeof(dst_hdr));
 
     dst_hdr.flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
 
@@ -151,7 +153,7 @@ namespace Switch {
 		   (data == nullptr)))
 	throw PortBrokenException(*this);
 
-      if (closure(head, data, flen))
+      if (closure(data, flen))
         break;
 
     } while ((i = vq_next_desc(&desc[i], max)) != max);
@@ -169,7 +171,7 @@ namespace Switch {
 	   p.packet_length == 0);
 
     p.virtio.index = vq_pop_generic(vq, writeable_bufs,
-                                    [&p] (unsigned head, uint8_t *data, uint32_t flen) {
+                                    [&p] (uint8_t *data, uint32_t flen) {
                                       p.fragment[p.fragments]        = data;
                                       p.fragment_length[p.fragments] = flen;
 
