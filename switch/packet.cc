@@ -1,4 +1,5 @@
 #include <packetjob.hh>
+#include <util.hh>
 
 namespace Switch {
 
@@ -17,26 +18,13 @@ namespace Switch {
 						    destination segment. */
 
     for (unsigned src_i = 1; src_i < src.fragments; src_i++) {
-      uint8_t *src_ptr   = src.fragment[src_i];
-      size_t   src_space = src.fragment_length[src_i];
+      uint8_t const *src_ptr   = src.fragment[src_i];
+      size_t         src_space = src.fragment_length[src_i];
 
       do {
 	size_t chunk = std::min(dst_space, src_space);
 
-#if defined(__x86_64__) or defined(__i386__)
-	unsigned ecx = chunk;
-	asm volatile ("rep; movsb"
-		      : "+D" (dst_ptr),
-			"+S" (src_ptr),
-			"+c" (ecx)
-		      :
-		      : "memory");
-#else
-#warning No optimized memcpy available.
-	memcpy(dst_ptr, src_ptr, chunk);
-	src_ptr    += chunk;
-	dst_ptr    += chunk;
-#endif
+        movs<uint8_t>(dst_ptr, src_ptr, chunk);
 
 	src_space  -= chunk;
 	dst_space  -= chunk;

@@ -10,6 +10,29 @@ static inline uint64_t rdtsc()
   return static_cast<uint64_t>(hi) << 32 | lo;
 }
 
+/// Like memcpy, but advances src and dst pointers just as rep movsb
+/// does.
+template <typename T>
+static inline void movs(T * &dst, T const *&src, size_t size)
+{
+#if defined(__x86_64__) or defined(__i386__)
+  // At least on Ivy Bridge upwards, this is the fastest way to copy
+  // for larger amounts of data. We should check for the corresponding
+  // CPUID bit.
+  asm volatile ("rep; movsb"
+                : "+D" (dst),
+                  "+S" (src),
+                  "+c" (size)
+                :
+                : "memory");
+#else
+#warning No optimized memcpy available.
+  memcpy(dst, src, size);
+  src_ptr    += size;
+  dst_ptr    += size;
+#endif
+}
+
 class Uncopyable {
 private:
   Uncopyable(Uncopyable const &);
@@ -22,6 +45,8 @@ protected:
 #define RELAX() asm volatile ("pause");
 
 /// Call a method when the current scope is exitted.
+/// XXX Use a closure here, but check whether this generates the same
+/// code.
 template<typename CLASS, typename RETURN, typename... Arguments>
 class Finally {
   template<int ...>
