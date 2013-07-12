@@ -31,9 +31,9 @@ debug_enabled   = (int(ARGUMENTS.get('debug', 1)) == 1)
 lto_enabled     = (int(ARGUMENTS.get('lto', 0)) == 1)
 asserts_enabled = (int(ARGUMENTS.get('asserts', 1)) == 1)
 
-optflags = []
+optflags = ['-g']
 if debug_enabled:
-    optflags += ['-O1', '-g']
+    optflags += ['-O0']
 else:
     optflags += ['-O3']
 
