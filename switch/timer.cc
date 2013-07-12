@@ -9,6 +9,10 @@ namespace Switch {
 
   uint64_t cycles_per_second()
   {
+    static uint64_t cps = 0;
+
+    if (cps) return cps;
+
     FILE *f = fopen("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq", "r");
     unsigned long long freq;
     if (not f or (1 != fscanf(f, "%llu", &freq))) {
@@ -28,7 +32,7 @@ namespace Switch {
       abort();
     }
 
-    return freq;
+    return (cps = freq);
   }
 
 }

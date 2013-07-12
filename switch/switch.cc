@@ -84,12 +84,10 @@ namespace Switch {
 
   void Switch::loop()
   {
+    Timer rcu_timer(1, 1000000 /* ms */);   
+    Timer idle_timer(_poll_us, 1000 /* us */);
 
-    const unsigned idle_freq    = 10000;
-    const unsigned idle_timeout = 5 /* in 10 us */;
-    Timer          idle_timer(idle_freq);
-
-    logf("Main loop entered. Idle poll time is 50us.");
+    logf("Main loop entered. Idle poll time is %uus.", _poll_us);
 
     do {			// Main loop
       enum {
@@ -98,25 +96,37 @@ namespace Switch {
 	NOTIFICATION_ENABLE,
       } state = WORK;
 
+      rcu_quiescent_state();
+
+      // Casting madness... Otherwise this won't compile.
+      PortsList      **pports    =  const_cast<PortsList **>(&_ports);
+      PortsList const &ports     = *rcu_dereference(*pports);
+      SwitchHash      &mac_cache = *rcu_dereference(_mac_table);
+      bool             work_done = false;
+      // We will exit our main polling loop according to this timer to
+      // enter a quiescent state.
+      rcu_timer.arm();
+
       while (LIKELY(not should_shutdown())) { // RCU Loop
-	bool work_done = false;
-	rcu_quiescent_state();
-
+        work_done = false;
 	try {
-	  // Casting madness... Otherwise this won't compile.
-	  PortsList      **pports    =  const_cast<PortsList **>(&_ports);
-	  PortsList const &ports     = *rcu_dereference(*pports);
-	  SwitchHash      &mac_cache = *rcu_dereference(_mac_table);
-
 	  work_done = work_quantum(ports, mac_cache, state == NOTIFICATION_ENABLE);
 	} catch (PortBrokenException &e) {
 	  detach_port(e.port());
 	  work_done = true;
+          // Exit loop to force a quiescent state.
+          break;
 	}
+
+        uint64_t now = rdtsc();
 
 	// We have seen action.
 	if (LIKELY(work_done)) {
 	  state = WORK;
+
+          if (UNLIKELY(rcu_timer.elapsed(now)))
+            break;
+
 	  continue;
 	}
 
@@ -126,10 +136,10 @@ namespace Switch {
 	  // clock.
 	  assert(not work_done);
 	  state = IDLE;
-	  idle_timer.arm();
+	  idle_timer.arm(now);
 	  break;
 	case IDLE:
-	  if (idle_timer.elapsed(idle_timeout)) {
+	  if (idle_timer.elapsed(now)) {
 	    // We have been idle for the maximum idle
 	    // duration. Reenable notifications so we can block.
 	    state = NOTIFICATION_ENABLE;
@@ -142,6 +152,11 @@ namespace Switch {
 	}
       }
     block:
+
+      if (work_done)
+        // We just exitted to force a quiescent state. No need to
+        // block.
+        continue;
 
       // Block
       rcu_thread_offline();
@@ -237,8 +252,8 @@ namespace Switch {
     write(_event_fd, &v, sizeof(v));
   }
 
-  Switch::Switch()
-    : _shutdown_called(false),
+  Switch::Switch(unsigned poll_us)
+    : _poll_us(poll_us), _shutdown_called(false),
       _mac_table(new SwitchHash), _ports(new PortsList),
       _ports_mtx()
   {

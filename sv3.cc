@@ -59,15 +59,17 @@ int main(int argc, char **argv)
   int force               = false;
 
   static struct option long_options [] = {
-    { "force",            no_argument, &force,                       1 },
-    { "no-checksum",      no_argument, &Switch::virtio_checksum,     0 },
-    { "no--segmentation", no_argument, &Switch::virtio_segmentation, 0 },
+    { "force",            no_argument, &force,                       1  },
+    { "no-checksum",      no_argument, &Switch::virtio_checksum,     0  },
+    { "no-segmentation",  no_argument, &Switch::virtio_segmentation, 0  },
+    { "poll-us",          required_argument, 0,                     'p' },
     { 0, 0, 0, 0 },
   };
 
 
-  int  opt;
-  int  opt_idx;
+  int poll_us = 50;
+  int opt;
+  int opt_idx;
 
   while ((opt = getopt_long(argc, argv, "f", long_options, &opt_idx)) != -1) {
     switch (opt) {
@@ -76,15 +78,18 @@ int main(int argc, char **argv)
     case 'f':
       force = true;
       break;
+    case 'p':
+      poll_us = atoi(optarg);
+      break;
     case '?':
     default: /* '?' */
-      fprintf(stderr, "Usage: %s [-f|--force] [--virtio-{checksum,segmentation}]\n", argv[0]);
+      fprintf(stderr, "Usage: %s [-f|--force] [--virtio-{checksum,segmentation}] [--poll-us us]\n", argv[0]);
       return EXIT_FAILURE;
     }
   }
 
   try {
-    Switch::Switch   sv3;
+    Switch::Switch   sv3(poll_us);
     Switch::Listener listener(sv3, force);
 
     struct sigaction sa;

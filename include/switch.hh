@@ -74,8 +74,11 @@ namespace Switch {
   protected:
     typedef std::list<Port *> PortsList;
 
-    // Blocking
+    /// The event fd the switch main loop uses to block, when idle.
     int              _event_fd;
+
+    /// How many microseconds to poll, before blocking when idle.
+    unsigned         _poll_us;
 
     // Signal handling
     std::atomic<bool> _shutdown_called;
@@ -128,7 +131,7 @@ namespace Switch {
     // Wake up the polling thread and have it poll all ports.
     void schedule_poll();
 
-    Switch();
+    explicit Switch(unsigned poll_us);
     ~Switch();
 
   };

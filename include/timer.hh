@@ -14,23 +14,24 @@ namespace Switch {
   /// differences. This timer is not completely precise, so don't use
   /// this for benchmarking.
   class Timer {
-    uint64_t _cycles_per_tick;
-
-    uint64_t _start_time;
+    uint64_t _period_cycles;
+    uint64_t _end_time;
 
   public:
 
-    void arm() { _start_time = rdtsc(); }
-
-    bool elapsed(unsigned periods) {
-      return (rdtsc() - _start_time) >= _cycles_per_tick*periods;
+    void arm(uint64_t now = rdtsc())
+    { 
+      _end_time = now + _period_cycles;
     }
 
-    Timer(uint64_t ticks_per_second)
-      : _cycles_per_tick(double(cycles_per_second()) / ticks_per_second)
-    {
-      arm();
+    bool elapsed(uint64_t now = rdtsc()) {
+      return now > _end_time;
     }
+
+    Timer(unsigned periods, unsigned frequency)
+      : _period_cycles(double(cycles_per_second()) * periods / frequency),
+        _end_time(0)
+    {}
   };
 
 }
