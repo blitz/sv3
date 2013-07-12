@@ -7,9 +7,9 @@
 namespace Switch {
 
   void
-  VirtioDevice::receive(Packet &p)
+  VirtioDevice::receive(Packet &src)
   {
-    assert(p.src_port != this);
+    assert(src.src_port != this);
 
     if (UNLIKELY(not (status & VIRTIO_CONFIG_S_DRIVER_OK))) return;
 
@@ -17,7 +17,7 @@ namespace Switch {
     // offloads, if not always use the slow path (which is not implemented...).
 
     const uint32_t fast_path_features = 0
-      | (1 << VIRTIO_NET_F_GUEST_CSUM) 
+      | (1 << VIRTIO_NET_F_GUEST_CSUM)
       | (1 << VIRTIO_NET_F_GUEST_TSO4)
       | (1 << VIRTIO_NET_F_GUEST_TSO6)
       | (1 << VIRTIO_NET_F_GUEST_UFO)
@@ -28,31 +28,74 @@ namespace Switch {
       abort();
     }
 
-    Packet dst_p(nullptr);
+    // The header in fragment[0] is handled specially in the closure
+    // below. Thus we can start with the first data fragment here.
+    unsigned       src_fragment = 1; // Points to src fragment currently in-use.
+    unsigned       dst_fragment = 0; // How many dst fragments did we consume?
 
-    // XXX Use vq_pop_generic to fetch not more descriptors than we need.
-    if (UNLIKELY(not vq_pop(rx_vq(), dst_p, true))) {
-      // logf("RX queue empty. Packet dropped.");
+    uint8_t const *src_ptr   = src.fragment[src_fragment];
+    uint32_t       src_space = src.fragment_length[src_fragment];
+
+    uint32_t       tot_space = src.packet_length;
+
+    auto c = [&]
+      (uint8_t *dst_ptr, uint32_t dst_space) {
+      if (dst_fragment == 0) {
+        // Header
+        if (UNLIKELY(dst_space != sizeof(struct virtio_net_hdr)))
+          throw PortBrokenException(*this);
+
+        virtio_net_hdr  dst_hdr; memset(&dst_hdr, 0, sizeof(dst_hdr));
+        virtio_net_hdr *src_hdr = reinterpret_cast<virtio_net_hdr *>(src.fragment[0]);
+        dst_hdr.flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
+
+        dst_hdr.gso_type = src_hdr->gso_type;
+        dst_hdr.hdr_len  = src_hdr->hdr_len;
+        dst_hdr.gso_size = src_hdr->gso_size;
+
+        memcpy(dst_ptr, &dst_hdr, sizeof(dst_hdr));
+        tot_space -= sizeof(dst_hdr);
+      } else {
+        // Packet
+        while (dst_space) {
+          uint32_t chunk = std::min(dst_space, src_space);
+          assert(chunk <= tot_space);
+
+          movs(dst_ptr, src_ptr, chunk);
+
+          src_space -= chunk;
+          dst_space -= chunk;
+          tot_space -= chunk;
+
+          if (src_space == 0) {
+            if (tot_space == 0) {
+              // Packet completely copied.
+              dst_fragment += 1;
+              return true;
+            }
+
+            // Otherwise, fetch a new src fragment.
+            src_fragment += 1;
+            src_ptr       = src.fragment[src_fragment];
+            src_space     = src.fragment_length[src_fragment];
+          }
+        }
+
+      }
+
+      dst_fragment += 1;
+      return false;           // We want more.
+    };
+
+    unsigned head = vq_pop_generic(rx_vq(), true, c);
+    if (UNLIKELY(head == 0))
+      // No space. Packet dropped.
       return;
-    }
 
-    if (UNLIKELY(dst_p.fragments < 2 or
-		 dst_p.fragment_length[0] != sizeof(struct virtio_net_hdr)))
-      throw PortBrokenException(*this);
-
-    virtio_net_hdr *src_hdr = reinterpret_cast<virtio_net_hdr *>(p.fragment[0]);
-    virtio_net_hdr  dst_hdr; memset(&dst_hdr, 0, sizeof(dst_hdr));
-
-    dst_hdr.flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
-
-    dst_hdr.gso_type = src_hdr->gso_type;
-    dst_hdr.hdr_len  = src_hdr->hdr_len;
-    dst_hdr.gso_size = src_hdr->gso_size;
-
-    dst_p.copy_from(p, &dst_hdr);
-
-    uint16_t plen = std::min(p.packet_length, dst_p.packet_length);
-    vq_push(rx_vq(), dst_p, plen);
+    // Calculate packet length. We might have truncated it, because of
+    // missing buffer space.
+    uint32_t plen = src.packet_length - tot_space;
+    vq_push(rx_vq(), head, plen);
   }
 
   void
@@ -80,7 +123,7 @@ namespace Switch {
     /* Callers read a descriptor at vq->last_avail_idx.  Make sure
      * descriptor read does not bypass avail index read. */
     uint16_t num_heads = __atomic_load_n(&vq.vring.avail->idx,
-					 __ATOMIC_ACQUIRE) - idx;
+                                         __ATOMIC_ACQUIRE) - idx;
 
     /* Check if guest isn't doing very strange things with descriptor
        numbers. */
@@ -98,7 +141,7 @@ namespace Switch {
     /* Grab the next descriptor number they're advertising, and increment
      * the index we've seen. */
     head = __atomic_load_n(&vq.vring.avail->ring[idx % QUEUE_ELEMENTS],
-			   __ATOMIC_ACQUIRE);
+                           __ATOMIC_ACQUIRE);
 
     /* If their number is silly, that's a fatal mistake. */
     if (UNLIKELY(head >= QUEUE_ELEMENTS))
@@ -135,7 +178,6 @@ namespace Switch {
     unsigned max = QUEUE_ELEMENTS;
     unsigned head;
     unsigned i = head = this->vq_get_head(vq, vq.last_avail_idx++);
-    unsigned fragments = 0;
 
     /* Collect all the descriptors */
     do {
@@ -149,9 +191,8 @@ namespace Switch {
       // as well.
       bool buf_writeable = (desc[i].flags & VRING_DESC_F_WRITE);
       if (UNLIKELY((writeable_bufs xor buf_writeable) or
-		   (fragments >= Packet::MAX_FRAGMENTS) or
-		   (data == nullptr)))
-	throw PortBrokenException(*this);
+                   (data == nullptr)))
+        throw PortBrokenException(*this);
 
       if (closure(data, flen))
         break;
@@ -165,34 +206,40 @@ namespace Switch {
 
   int
   VirtioDevice::vq_pop(VirtQueue &vq, Packet &p,
-		       bool writeable_bufs)
+                       bool writeable_bufs)
   {
     assert(p.fragments     == 0 and
-	   p.packet_length == 0);
+           p.packet_length == 0);
 
-    p.virtio.index = vq_pop_generic(vq, writeable_bufs,
-                                    [&p] (uint8_t *data, uint32_t flen) {
-                                      p.fragment[p.fragments]        = data;
-                                      p.fragment_length[p.fragments] = flen;
+    // Called for each buffer in the chain. Collect them in Packet p.
+    auto c = [&] (uint8_t *data, uint32_t flen) {
+      assert(data);
+      p.fragment[p.fragments]        = data;
+      p.fragment_length[p.fragments] = flen;
 
-                                      p.packet_length += flen;
-                                      p.fragments     += 1;
+      p.packet_length += flen;
 
-                                      return false; // We want more
-                                    });
+      if (UNLIKELY(p.fragments + 1U > Packet::MAX_FRAGMENTS))
+        throw PortBrokenException(*this);
 
+      p.fragments     += 1;
+
+      return false; // We want more
+    };
+
+    p.virtio.index = vq_pop_generic(vq, writeable_bufs, c);
     return p.fragments;
   }
 
   void
-  VirtioDevice::vq_fill(VirtQueue &vq, Packet const &p,
-			uint32_t len, unsigned idx)
+  VirtioDevice::vq_fill(VirtQueue &vq, unsigned head,
+                        uint32_t len, unsigned idx)
   {
     idx = (idx + vq.vring.used->idx) % QUEUE_ELEMENTS;
 
     /* Get a pointer to the next entry in the used ring. */
     VRingUsedElem &el = vq.vring.used->ring[idx];
-    el.id  = p.virtio.index;
+    el.id  = head;
     el.len = len;
   }
 
@@ -212,7 +259,7 @@ namespace Switch {
     // XXX This might also work with just assigning the result of the
     // test to pending_irq and destroying earlier scheduled IRQs?
     if (not (__atomic_load_n(&avail->flags, __ATOMIC_ACQUIRE) &
-	     VRING_AVAIL_F_NO_INTERRUPT)) {
+             VRING_AVAIL_F_NO_INTERRUPT)) {
       // Guest asks to be interrupted.
       vq.pending_irq = true;
       isr.store(1, std::memory_order_release);
@@ -220,11 +267,9 @@ namespace Switch {
   }
 
 
-  void VirtioDevice::vq_push(VirtQueue &vq,
-			     Packet const &p,
-			     uint32_t len)
+  void VirtioDevice::vq_push(VirtQueue &vq, unsigned head, uint32_t len)
   {
-    vq_fill(vq, p, len, 0);
+    vq_fill(vq, head, len, 0);
     vq_flush(vq, 1);
   }
 
@@ -237,7 +282,7 @@ namespace Switch {
     vq.vring.used->flags = enable_notifications ? 0 : VRING_USED_F_NO_NOTIFY;
 
     if (not (status & VIRTIO_CONFIG_S_DRIVER_OK) or
-	not vq_pop(vq, p, false /* readable buffers */))
+        not vq_pop(vq, p, false /* readable buffers */))
       return false;
 
     if (UNLIKELY(p.fragment_length[0] != sizeof(struct virtio_net_hdr)))
@@ -252,31 +297,31 @@ namespace Switch {
   void
   VirtioDevice::mark_done(Packet &p)
   {
-    vq_push(tx_vq(), p, 0);
+    vq_push(tx_vq(), p.virtio.index, 0);
   }
 
   uint64_t
   VirtioDevice::io_read (unsigned bar_no,
-			 uint64_t addr,
-			 unsigned size)
+                         uint64_t addr,
+                         unsigned size)
   {
     uint64_t val = ~0ULL;
     if (UNLIKELY(bar_no != 0)) return val;
 
     switch (addr) {
-    case VIRTIO_PCI_HOST_FEATURES:  
+    case VIRTIO_PCI_HOST_FEATURES:
       logf("Reading host features %x", host_features);
       val = host_features;  break;
-    case VIRTIO_PCI_GUEST_FEATURES: 
+    case VIRTIO_PCI_GUEST_FEATURES:
       logf("Reading guest features %x", guest_features);
       val = guest_features; break;
     case VIRTIO_PCI_QUEUE_PFN:
       if (queue_sel < VIRT_QUEUES)
-	val = vq[queue_sel].pa >> VIRTIO_PCI_QUEUE_ADDR_SHIFT;
+        val = vq[queue_sel].pa >> VIRTIO_PCI_QUEUE_ADDR_SHIFT;
       break;
     case VIRTIO_PCI_QUEUE_NUM:
       if (queue_sel < VIRT_QUEUES)
-	val = QUEUE_ELEMENTS;
+        val = QUEUE_ELEMENTS;
       break;
     case VIRTIO_PCI_QUEUE_SEL:
       val = queue_sel;
@@ -293,7 +338,7 @@ namespace Switch {
       break;
     case VIRTIO_MSI_QUEUE_VECTOR:
       if (queue_sel < VIRT_QUEUES)
-	val = vq[queue_sel].vector;
+        val = vq[queue_sel].vector;
       break;
     default:
       logf("Unimplemented register %x read.", addr);
@@ -301,7 +346,7 @@ namespace Switch {
     }
 
     logf("io read  %04" PRIx64 "+%x -> %" PRIx64, addr, size,
-	 val & ((1 << 8*size) - 1));
+         val & ((1 << 8*size) - 1));
     return val;
   }
 
@@ -309,7 +354,7 @@ namespace Switch {
   enable_notification(VirtQueue &vq)
   {
     __atomic_and_fetch(&vq.vring.used->flags, ~VRING_USED_F_NO_NOTIFY,
-		       __ATOMIC_RELEASE);
+                       __ATOMIC_RELEASE);
   }
 
   static inline void
@@ -317,13 +362,13 @@ namespace Switch {
   {
     // XXX Probably overkill to use an atomic access here.
     __atomic_or_fetch(&vq.vring.used->flags, VRING_USED_F_NO_NOTIFY,
-		      __ATOMIC_RELEASE);
+                      __ATOMIC_RELEASE);
   }
 
 
   static inline void *
   vnet_vring_align(void *addr,
-		   unsigned long align)
+                   unsigned long align)
   {
     return (void *)(((uintptr_t)addr + align - 1) & ~(align - 1));
   }
@@ -341,8 +386,8 @@ namespace Switch {
       vq.vring.desc  = reinterpret_cast<VRingDesc *>(va);
       vq.vring.avail = reinterpret_cast<VRingAvail *>(va + QUEUE_ELEMENTS * sizeof(VRingDesc));
       vq.vring.used  = reinterpret_cast<VRingUsed *>(vnet_vring_align(reinterpret_cast<char *>(vq.vring.avail) +
-								       offsetof(VRingAvail, ring[QUEUE_ELEMENTS]),
-								       VIRTIO_PCI_VRING_ALIGN));
+                                                                       offsetof(VRingAvail, ring[QUEUE_ELEMENTS]),
+                                                                       VIRTIO_PCI_VRING_ALIGN));
     } else {
       vq.vring.desc  = nullptr;
       vq.vring.avail = nullptr;
@@ -353,16 +398,16 @@ namespace Switch {
   }
 
   void VirtioDevice::io_write(unsigned bar_no,
-			      uint64_t addr,
-			      unsigned size,
-			      uint64_t val,
-			      bool &irqs_changed)
+                              uint64_t addr,
+                              unsigned size,
+                              uint64_t val,
+                              bool &irqs_changed)
   {
     switch (addr) {
     case VIRTIO_PCI_QUEUE_NOTIFY:
       if (val >= VIRT_QUEUES) {
-	logf("Guest notified non-existent queue %u.", (unsigned)val);
-	break;
+        logf("Guest notified non-existent queue %u.", (unsigned)val);
+        break;
       }
 
       disable_notification(vq[val]);
@@ -370,35 +415,35 @@ namespace Switch {
       break;
     case VIRTIO_PCI_QUEUE_SEL:
       if (val >= VIRT_QUEUES) {
-	logf("Guest selected non-existent queue %u.", (unsigned)val);
+        logf("Guest selected non-existent queue %u.", (unsigned)val);
       } else
-	queue_sel = val;
+        queue_sel = val;
       break;
     case VIRTIO_PCI_QUEUE_PFN:
       if (queue_sel >= VIRT_QUEUES) {
-	logf("Guest set address on non-existent queue %u.", queue_sel);
+        logf("Guest set address on non-existent queue %u.", queue_sel);
       } else
-	vq_set_addr(vq[queue_sel], val << VIRTIO_PCI_QUEUE_ADDR_SHIFT);
+        vq_set_addr(vq[queue_sel], val << VIRTIO_PCI_QUEUE_ADDR_SHIFT);
 
       if (not online and rx_vq().vring.desc and tx_vq().vring.desc)
-	enable();
+        enable();
 
       // Take us offline, if the guest has screwed up queue
       // configuration.
       if (online and not (rx_vq().vring.desc and tx_vq().vring.desc))
-	disable();
+        disable();
 
       break;
     case VIRTIO_PCI_GUEST_FEATURES: {
       /* Guest does not negotiate properly?  We have to assume nothing. */
       if (val & (1 << VIRTIO_F_BAD_FEATURE)) {
-	logf("BAD FEATURE set. Guest broken.");
+        logf("BAD FEATURE set. Guest broken.");
       }
 
       uint32_t supported_features = host_features; /* What do we support? */
       uint32_t bad = (val & ~supported_features) != 0;
       if (bad)
-	logf("Guest features we don't support: %x.\n", bad);
+        logf("Guest features we don't support: %x.\n", bad);
 
 
       val &= supported_features;
@@ -416,13 +461,13 @@ namespace Switch {
       break;
     case VIRTIO_MSI_QUEUE_VECTOR:
       if (queue_sel >= VIRT_QUEUES) {
-	logf("Guest configured IRQ on non-existent queue %u.", queue_sel);
-	break;
+        logf("Guest configured IRQ on non-existent queue %u.", queue_sel);
+        break;
       }
 
       if (val >= MSIX_VECTORS) {
-	logf("Guest configured non-existent MSI-X vector %u.", val);
-	break;
+        logf("Guest configured non-existent MSI-X vector %u.", val);
+        break;
       }
 
       logf("Queue %u configured to trigger MSI-X vector %u.", queue_sel, (unsigned)val);

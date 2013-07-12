@@ -97,11 +97,9 @@ namespace Switch {
     int      vq_pop_generic(VirtQueue &vq, bool writeable_bufs, T closure);
 
     int      vq_pop      (VirtQueue &vq, Packet &elem, bool writeable_bufs);
-    void     vq_fill     (VirtQueue &vq, Packet const &elem,
-			  uint32_t len, unsigned idx);
+    void     vq_fill     (VirtQueue &vq, unsigned head, uint32_t len, unsigned idx);
     void     vq_flush    (VirtQueue &vq, unsigned count);
-    void     vq_push     (VirtQueue &vq, Packet const &elem,
-			  uint32_t len);
+    void     vq_push     (VirtQueue &vq, unsigned head, uint32_t len);
     void     vq_irq      (VirtQueue &vq);
 
   public:
