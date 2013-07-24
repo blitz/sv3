@@ -114,11 +114,17 @@ AlwaysBuild(Command('version.inc', ['sv3.cc'], """git describe --dirty --always 
 
 ## Qemu
 
+
 qemusrc = 'contrib/qemu'
-host_env.Precious(qemusrc + '/include/hw/misc/externalpci.h')
-host_env.Command (qemusrc + '/include/hw/misc/externalpci.h', ['.gitmodules'],
-        [ "git submodule init",
-          "git submodule update" ])
+if not FindFile(qemusrc + "/include/hw/misc/externalpci", "."):
+    print("Could not find qemu. Cloning...")
+    if Execute([ "git submodule init",
+                     "git submodule update" ]):
+        print("Could not check out qemu. Execute 'git submodule init && git submodule update' manually.")
+        Exit(1)
+# host_env.Precious(qemusrc + "/README")
+# host_env.Command (qemusrc + "/README" , ['.gitmodules'],
+#         )
 host_env.Append(CPPPATH = [ qemusrc + "/include"])
 
 ## Switch library
