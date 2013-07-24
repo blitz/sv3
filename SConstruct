@@ -49,9 +49,6 @@ if not asserts_enabled:
 if not asserts_enabled and lto_enabled and not debug_enabled:
     host_env.Append(CPPFLAGS = ['-DSV3_BENCHMARK_OK'])
 
-qemusrc = ARGUMENTS.get('qemusrc', 'contrib/qemu')
-host_env.Append(CPPPATH = [qemusrc + "/include"])
-
 host_env.Append(CCFLAGS = optflags, LINKFLAGS = optflags)
 
 conf = Configure(host_env, custom_tests = { 'AddOptionalFlag' : u.AddOptionalFlag ,
@@ -91,10 +88,6 @@ if not conf.CheckCXXHeader('list'):
     print("C++ STL seems broken.")
     Exit(1)
 
-if not conf.CheckHeader('hw/misc/externalpci.h'):
-    print("Pass proper qemusrc=... parameter. Could not find patched qemu at " + qemusrc)
-    Exit(1)
-
 if not 'cpu' in ARGUMENTS:
     opt_cpu = 'native'
 else:
@@ -118,6 +111,15 @@ host_pcap_env = conf.Finish()
 
 ## Version info
 AlwaysBuild(Command('version.inc', ['sv3.cc'], """git describe --dirty --always | sed 's/^\\(.*\\)$/"\\1"/' > $TARGET"""))
+
+## Qemu
+
+qemusrc = 'contrib/qemu'
+host_env.Precious(qemusrc + '/include/hw/misc/externalpci.h')
+host_env.Command (qemusrc + '/include/hw/misc/externalpci.h', ['.gitmodules'],
+        [ "git submodule init",
+          "git submodule update" ])
+host_env.Append(CPPPATH = [ qemusrc + "/include"])
 
 ## Switch library
 
