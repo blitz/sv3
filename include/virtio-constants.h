@@ -12,8 +12,7 @@
 /* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU */
 /* General Public License version 2 for more details. */
 
-/* Virtio constants and data structures. Cobbled together from all
-   over the place. */
+/* Part of this code is based on code from Qemu, which is GPL 2. */
 
 #pragma once
 

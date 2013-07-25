@@ -12,6 +12,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 // General Public License version 2 for more details.
 
+// Part of this code is based on code from Qemu, which is also GPL 2.
+
 #include <algorithm>
 #include <cinttypes>
 #include <virtiodevice.hh>
