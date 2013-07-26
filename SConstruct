@@ -14,6 +14,7 @@ cpu=CPU       Optimize for the given CPU. Passed to -march.
 lto=0/1       Enable link-time optimization. Default is 0.
 asserts=1/0   Enable assertions at runtime. Default is 1.
 qemusrc=dir   Source directory of patched qemu. Default is ../qemu.
+release=0/1   Forces lto=1,asserts=0,debug=0.
 """)
 
 
@@ -30,6 +31,11 @@ if 'cxx' in ARGUMENTS:
 debug_enabled   = (int(ARGUMENTS.get('debug', 1)) == 1)
 lto_enabled     = (int(ARGUMENTS.get('lto', 0)) == 1)
 asserts_enabled = (int(ARGUMENTS.get('asserts', 1)) == 1)
+
+if int(ARGUMENTS.get('release')) == 1:
+    debug_enabled   = 0
+    lto_enabled     = 1
+    asserts_enabled = 0
 
 optflags = ['-g']
 if debug_enabled:
