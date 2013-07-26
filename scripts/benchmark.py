@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
+import datetime
 import os
 import sys
 import math
@@ -177,13 +178,13 @@ def run_benchmark(prefix, client, server):
                                                                    lambda: netperf_stream_like(client, "TCP_MAERTS")))
     return results
 
-def run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus):
+def run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus, poll_us, batch_size):
     print("\n--- externalpci ---")
     print("Switch on %s, server on %s, client on %s." % (switch_cpus, server_cpus, client_cpus))
     qemu_externalpci_args = "-mem-path /tmp -device externalpci,socket=/tmp/sv3 -net none "
     qemu_cmd = "%s %s %s" % (qemu_bin, qemu_externalpci_args, qemu_generic)
 
-    switch = e.spawn("taskset -c %s ../sv3 -f" % (thread_list_to_str(switch_cpus)))
+    switch = e.spawn("taskset -c %s ../sv3 -f --poll-us %u --batch-size %u" % (thread_list_to_str(switch_cpus), poll_us, batch_size))
     r = switch.expect_exact(["Built with optimal compiler flags.", "Do not use for benchmarking"])
     if (r != 0):
         print("Switch was not built for benchmarking!")
@@ -259,6 +260,13 @@ def run_vhost_benchmark(server_cpus, client_cpus):
         for f in cleanup_fn:
             f()
 
+def write_csv(name, results):
+    with open(name, 'wb') as csvfile:
+        writer = csv.writer(csvfile)
+        for r in results:
+            writer.writerow(r)
+
+
 def main(args):
     check_setup()
 
@@ -281,13 +289,18 @@ def main(args):
     
     print("Let the benchmarking commence!")
 
-    externalpci_results = run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus)
-    vhost_results       = run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus)
+    dstr = datetime.datetime.today().strftime("%Y%m%d-%H%m%S")
 
-    with open('results.csv', 'wb') as csvfile:
-        writer = csv.writer(csvfile)
-        for r in externalpci_results + vhost_results:
-            writer.writerow(r)
+    write_csv("results-vhost-%s.csv" % dstr, run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus))
+
+    for poll_us in range(0,101,10):
+        for batch_size in range(1,32):
+            write_csv("results-sv3-%s-poll%u-batch%u" % (dstr, poll_us, batch_size),
+                      run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus,
+                                                poll_us, batch_size))
+
+
+
 
 if __name__ == "__main__":
     main(sys.argv)
