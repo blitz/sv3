@@ -13,6 +13,9 @@ import argparse
 
 import topology
 
+def thread_list_to_str(tl):
+    return ",".join([str(t.id) for t in tl])
+
 net_if    = "eth0"
 qemu_bin  = "../contrib/qemu/x86_64-softmmu/qemu-system-x86_64"
 linux_bin = "../contrib/buildroot/buildroot/output/images/bzImage"
@@ -86,9 +89,9 @@ def qemu_quit(p):
     p.expect(e.EOF)
     p.close()
 
-def create_and_configure(qemu_cmd, is_server):
+def create_and_configure(qemu_cmd, is_server, cpus):
     print("Starting %s VM..." % ("server" if is_server else "client"))
-    p = e.spawn("sh -c '%s'" % qemu_cmd, timeout=20)
+    p = e.spawn("taskset -c %s sh -c '%s'" % (thread_list_to_str(cpus), qemu_cmd), timeout=20)
     p.setecho(False)
     p.expect_exact("buildroot login: ")
     p.sendline("root")
@@ -174,20 +177,21 @@ def run_benchmark(prefix, client, server):
                                                                    lambda: netperf_stream_like(client, "TCP_MAERTS")))
     return results
 
-def run_externalpci_benchmark():
+def run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus):
     print("\n--- externalpci ---")
+    print("Switch on %s, server on %s, client on %s." % (switch_cpus, server_cpus, client_cpus))
     qemu_externalpci_args = "-mem-path /tmp -device externalpci,socket=/tmp/sv3 -net none "
     qemu_cmd = "%s %s %s" % (qemu_bin, qemu_externalpci_args, qemu_generic)
 
-    switch = e.spawn("../sv3 -f")
+    switch = e.spawn("taskset -c %s ../sv3 -f" % (thread_list_to_str(switch_cpus)))
     r = switch.expect_exact(["Built with optimal compiler flags.", "Do not use for benchmarking"])
     if (r != 0):
         print("Switch was not built for benchmarking!")
         raise CommandFailed()
     print("Switch is running.")
 
-    server = create_and_configure(qemu_cmd, True)
-    client = create_and_configure(qemu_cmd, False)
+    server = create_and_configure(qemu_cmd, True, server_cpus)
+    client = create_and_configure(qemu_cmd, False, client_cpus)
     
     results = run_benchmark("epci", client, server)
     
@@ -221,8 +225,9 @@ def create_macvtap(netif, macvtap, mac):
 def delete_macvtap(macvtap):
     e.run("sudo ip link delete %s type macvtap" % macvtap)
 
-def run_vhost_benchmark():
+def run_vhost_benchmark(server_cpus, client_cpus):
     print("\n--- vhost ---")
+    print("Server on %s, client on %s." % (server_cpus, client_cpus))
     cleanup_fn = []
     try:
         def mt(name, tapname, mac):
@@ -234,12 +239,12 @@ def run_vhost_benchmark():
         client_macvtap = "macvtap0"
         qemu_vhost_args = " -netdev type=tap,id=guest,vhost=on,fd=3 -device virtio-net-pci,netdev=guest,mac=%s  3<>%s"
         qemu_vhost_client_args = qemu_vhost_args % (client_mac, mt(net_if, client_macvtap, client_mac))
-        client = create_and_configure("%s %s %s" % (qemu_bin, qemu_generic, qemu_vhost_client_args), False)
+        client = create_and_configure("%s %s %s" % (qemu_bin, qemu_generic, qemu_vhost_client_args), False, server_cpus)
 
         server_mac = "1a:54:0b:ca:bc:20"
         server_macvtap = "macvtap1"
         qemu_vhost_server_args = qemu_vhost_args % (server_mac, mt(net_if, server_macvtap, server_mac))
-        server = create_and_configure("%s %s %s" % (qemu_bin, qemu_generic, qemu_vhost_server_args), True)
+        server = create_and_configure("%s %s %s" % (qemu_bin, qemu_generic, qemu_vhost_server_args), True, client_cpus)
 
         try:
             results = run_benchmark("vhost", client, server)
@@ -253,9 +258,6 @@ def run_vhost_benchmark():
         cleanup_fn.reverse()
         for f in cleanup_fn:
             f()
-
-def thread_list_to_str(tl):
-    return ",".join([str(t.id) for t in tl])
 
 def main(args):
     check_setup()
@@ -272,16 +274,15 @@ def main(args):
         server_cpus = any_cpu
         client_cpus = any_cpu
     else:
-        # Select last three cores (hoping that there is the least IRQ
-        # activity) and their respective threads for our three components
-        [switch_cpus, server_cpus, client_cpus] = [thread_list_to_str(c.thread) for c in topo[-1].core[-3:]]
+        core_list = topo[-1].core[-4:]
+        switch_cpus = core_list[:2]
+        server_cpus = [core_list[2]]
+        client_cpus = [core_list[3]]
     
-    print("Switch on %s. Server on %s. Client on %s." % (switch_cpus, server_cpus, client_cpus))
-
     print("Let the benchmarking commence!")
 
-    externalpci_results = [] #run_externalpci_benchmark()
-    vhost_results       = run_vhost_benchmark()
+    externalpci_results = run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus)
+    vhost_results       = run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus)
 
     with open('results.csv', 'wb') as csvfile:
         writer = csv.writer(csvfile)
