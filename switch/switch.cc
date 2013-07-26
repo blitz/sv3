@@ -44,12 +44,11 @@ namespace Switch {
 			    SwitchHash      &mac_cache,
 			    bool enabled_notifications)
   {
-    const unsigned packets_per_port = 16;
     bool work_done                  = false;
 
     for (Port *src_port : ports) { // Packet switching loop
 
-      for (unsigned quota = packets_per_port; quota > 0; quota--) {
+      for (unsigned quota = _batch_size; quota > 0; quota--) {
 	Packet p(src_port);
 
 	if (not src_port->poll(p, enabled_notifications)) break;
@@ -101,7 +100,8 @@ namespace Switch {
     Timer rcu_timer(1, 1000000 /* ms */);   
     Timer idle_timer(_poll_us, 1000 /* us */);
 
-    logf("Main loop entered. Idle poll time is %uus.", _poll_us);
+    logf("Main loop entered. Idle poll time is %uus. Batch size is %u.",
+	 _poll_us, _batch_size);
 
     do {			// Main loop
       enum {
@@ -146,11 +146,16 @@ namespace Switch {
 
 	switch (state) {
 	case WORK:
-	  // The switch was idle for the first time. Start the idle
-	  // clock.
-	  assert(not work_done);
-	  state = IDLE;
-	  idle_timer.arm(now);
+	  // The switch was idle for the first time.
+	  if (_poll_us) {
+	    // Start the idle clock.
+	    state = IDLE;
+	    idle_timer.arm(now);
+	  } else {
+	    // Idle polling is disabled. Go right to enabling
+	    // notifications.
+	    state = NOTIFICATION_ENABLE;
+	  }
 	  break;
 	case IDLE:
 	  if (idle_timer.elapsed(now)) {
@@ -266,8 +271,9 @@ namespace Switch {
     write(_event_fd, &v, sizeof(v));
   }
 
-  Switch::Switch(unsigned poll_us)
-    : _poll_us(poll_us), _shutdown_called(false),
+  Switch::Switch(unsigned poll_us, unsigned batch_size)
+    : _poll_us(poll_us), _batch_size(batch_size),
+      _shutdown_called(false),
       _mac_table(new SwitchHash), _ports(new PortsList),
       _ports_mtx()
   {

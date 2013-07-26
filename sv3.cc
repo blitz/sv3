@@ -77,11 +77,13 @@ int main(int argc, char **argv)
     { "no-checksum",      no_argument, &Switch::virtio_checksum,     0  },
     { "no-segmentation",  no_argument, &Switch::virtio_segmentation, 0  },
     { "poll-us",          required_argument, 0,                     'p' },
+    { "batch-size",       required_argument, 0,                     'b' },
     { 0, 0, 0, 0 },
   };
 
 
-  int poll_us = 50;
+  int poll_us    = 50;
+  int batch_size = 16;
   int opt;
   int opt_idx;
 
@@ -95,15 +97,18 @@ int main(int argc, char **argv)
     case 'p':
       poll_us = atoi(optarg);
       break;
+    case 'b':
+      batch_size = atoi(optarg);
+      break;
     case '?':
     default: /* '?' */
-      fprintf(stderr, "Usage: %s [-f|--force] [--virtio-{checksum,segmentation}] [--poll-us us]\n", argv[0]);
+      fprintf(stderr, "Usage: %s [-f|--force] [--virtio-{checksum,segmentation}] [--poll-us us] [--batch-size n]\n", argv[0]);
       return EXIT_FAILURE;
     }
   }
 
   try {
-    Switch::Switch   sv3(poll_us);
+    Switch::Switch   sv3(poll_us, batch_size);
     Switch::Listener listener(sv3, force);
 
     struct sigaction sa;

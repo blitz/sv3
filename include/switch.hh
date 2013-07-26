@@ -92,7 +92,10 @@ namespace Switch {
     int              _event_fd;
 
     /// How many microseconds to poll, before blocking when idle.
-    unsigned         _poll_us;
+    const unsigned   _poll_us;
+
+    /// How many packets to switch from a single port in one batch.
+    const unsigned   _batch_size;
 
     // Signal handling
     std::atomic<bool> _shutdown_called;
@@ -145,7 +148,7 @@ namespace Switch {
     // Wake up the polling thread and have it poll all ports.
     void schedule_poll();
 
-    explicit Switch(unsigned poll_us);
+    explicit Switch(unsigned poll_us, unsigned batch_size);
     ~Switch();
 
   };
