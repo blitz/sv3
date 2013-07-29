@@ -32,7 +32,7 @@ debug_enabled   = (int(ARGUMENTS.get('debug', 1)) == 1)
 lto_enabled     = (int(ARGUMENTS.get('lto', 0)) == 1)
 asserts_enabled = (int(ARGUMENTS.get('asserts', 1)) == 1)
 
-if int(ARGUMENTS.get('release')) == 1:
+if int(ARGUMENTS.get('release', 0)) == 1:
     debug_enabled   = 0
     lto_enabled     = 1
     asserts_enabled = 0
