@@ -144,7 +144,7 @@ namespace Switch {
     /* Check if guest isn't doing very strange things with descriptor
        numbers. */
     if (UNLIKELY(num_heads > QUEUE_ELEMENTS))
-      throw PortBrokenException(*this);
+      throw PortBrokenException(*this, "avail->idx b0rken");
 
     return num_heads;
   }
@@ -161,7 +161,7 @@ namespace Switch {
 
     /* If their number is silly, that's a fatal mistake. */
     if (UNLIKELY(head >= QUEUE_ELEMENTS))
-      throw PortBrokenException(*this);
+      throw PortBrokenException(*this, "head b0rken");
 
     return head;
   }
@@ -177,7 +177,7 @@ namespace Switch {
 
     /* Check they're not leading us off end of descriptors. */
     next = __atomic_load_n(&desc->next, __ATOMIC_ACQUIRE);
-    if (UNLIKELY(next >= max)) throw PortBrokenException(*this);
+    if (UNLIKELY(next >= max)) throw PortBrokenException(*this, "next beyond bounds");
 
     return next;
   }
@@ -208,7 +208,7 @@ namespace Switch {
       bool buf_writeable = (desc[i].flags & VRING_DESC_F_WRITE);
       if (UNLIKELY((writeable_bufs xor buf_writeable) or
                    (data == nullptr)))
-        throw PortBrokenException(*this);
+        throw PortBrokenException(*this, "mixed read/write descriptors");
 
       if (closure(data, flen))
         break;
@@ -236,7 +236,7 @@ namespace Switch {
       p.packet_length += flen;
 
       if (UNLIKELY(p.fragments + 1U > Packet::MAX_FRAGMENTS))
-        throw PortBrokenException(*this);
+        throw PortBrokenException(*this, "too many fragments");
 
       p.fragments     += 1;
 
@@ -301,8 +301,8 @@ namespace Switch {
         not vq_pop(vq, p, false /* readable buffers */))
       return false;
 
-    if (UNLIKELY(p.fragment_length[0] != sizeof(struct virtio_net_hdr)))
-      throw PortBrokenException(*this);
+    if (UNLIKELY(p.fragment_length[0] != sizeof(struct virtio_net_hdr_mrg_rxbuf)))
+      throw PortBrokenException(*this, "invalid header size");
 
     // XXX Do something with the packet.
 

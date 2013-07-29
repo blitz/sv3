@@ -125,7 +125,8 @@ namespace Switch {
         work_done = false;
 	try {
 	  work_done = work_quantum(ports, mac_cache, state == NOTIFICATION_ENABLE);
-	} catch (PortBrokenException &e) {
+	} catch (PortBrokenException e) {
+	  e.port().logf("Illegal behavior: %s", e.reason());
 	  detach_port(e.port());
 	  work_done = true;
           // Exit loop to force a quiescent state.

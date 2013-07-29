@@ -39,10 +39,11 @@ namespace Switch {
     Switch     &_switch;
     std::string _name;
 
-    void logf(char const *str, ...);
-
   public:
     std::string const name() const { return _name; }
+
+    /// Log a message.
+    void logf(char const *str, ...);
 
     /// Receive a packet.
     virtual void receive(Packet &p) = 0;
@@ -77,10 +78,15 @@ namespace Switch {
   /// A port behaved strangely and needs to be removed. Can be thrown
   /// in the dynamic extent of Switch::loop().
   class PortBrokenException {
-    Port &_port;
+    Port       &_port;
+    char const *_reason;
   public:
-    Port &port() const { return _port; }
-    PortBrokenException(Port &port) : _port(port) { }
+
+    Port       &port()   const { return _port; }
+    char const *reason() const { return _reason; }
+
+    PortBrokenException(Port &port, char const *reason = "???")
+      : _port(port), _reason(reason) { }
   };
 
   class Switch final : protected rcu_head, Uncopyable {
