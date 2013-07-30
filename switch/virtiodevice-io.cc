@@ -33,6 +33,7 @@ namespace Switch {
     // offloads, if not always use the slow path (which is not implemented...).
 
     const uint32_t fast_path_features = 0
+      | (1 << VIRTIO_NET_F_MRG_RXBUF)
       | (1 << VIRTIO_NET_F_GUEST_CSUM)
       | (1 << VIRTIO_NET_F_GUEST_TSO4)
       | (1 << VIRTIO_NET_F_GUEST_TSO6)
@@ -40,78 +41,100 @@ namespace Switch {
       | (1 << VIRTIO_NET_F_GUEST_ECN);
 
     if (UNLIKELY((guest_features & fast_path_features) != fast_path_features)) {
-      // XXX Implement slow path.
-      abort();
+      throw PortBrokenException(*this, "XXX implement slow path");
     }
 
-    // The header in fragment[0] is handled specially in the closure
-    // below. Thus we can start with the first data fragment here.
-    unsigned       src_fragment = 1; // Points to src fragment currently in-use.
-    unsigned       dst_fragment = 0; // How many dst fragments did we consume?
+    // Points to src fragment currently in-use.
+    unsigned       src_fragment = 0;
+
+    // We'll remember where we need to update the header, when we're
+    // done. If this is set, we have processed the header.
+    uint16_t      *num_buffers  = nullptr;
 
     uint8_t const *src_ptr   = src.fragment[src_fragment];
     uint32_t       src_space = src.fragment_length[src_fragment];
 
+    // How many bytes are left in the source packet to copy.
     uint32_t       tot_space = src.packet_length;
+
+    // logf("Packet is %u bytes long.", tot_space);
 
     auto c = [&]
       (uint8_t *dst_ptr, uint32_t dst_space) {
-      if (dst_fragment == 0) {
-        // Header
-        if (UNLIKELY(dst_space != sizeof(struct virtio_net_hdr)))
-          throw PortBrokenException(*this);
 
-        virtio_net_hdr  dst_hdr; memset(&dst_hdr, 0, sizeof(dst_hdr));
-        virtio_net_hdr *src_hdr = reinterpret_cast<virtio_net_hdr *>(src.fragment[0]);
-        dst_hdr.flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
+      while (dst_space) {
+	uint32_t chunk = std::min(dst_space, src_space);
+	assert(chunk <= tot_space);
 
-        dst_hdr.gso_type = src_hdr->gso_type;
-        dst_hdr.hdr_len  = src_hdr->hdr_len;
-        dst_hdr.gso_size = src_hdr->gso_size;
+	if (num_buffers) {
+	  // Plain data
+	  movs(dst_ptr, src_ptr, chunk);
+	} else {
+	  // Special case for header.
+	  if (UNLIKELY(chunk < sizeof(struct virtio_net_hdr_mrg_rxbuf)))
+	    throw PortBrokenException(*this, "no space for contiguous header");
+	  chunk = sizeof(struct virtio_net_hdr_mrg_rxbuf);
 
-        memcpy(dst_ptr, &dst_hdr, sizeof(dst_hdr));
-        tot_space -= sizeof(dst_hdr);
-      } else {
-        // Packet
-        while (dst_space) {
-          uint32_t chunk = std::min(dst_space, src_space);
-          assert(chunk <= tot_space);
+	  virtio_net_hdr_mrg_rxbuf       *dst_hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf       *>(dst_ptr);
+	  virtio_net_hdr_mrg_rxbuf const *src_hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf const *>(src_ptr);
+	  dst_hdr->flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
 
-          movs(dst_ptr, src_ptr, chunk);
+	  dst_hdr->gso_type    = src_hdr->gso_type;
+	  dst_hdr->hdr_len     = src_hdr->hdr_len;
+	  dst_hdr->gso_size    = src_hdr->gso_size;
+	  dst_hdr->csum_start  = 0;
+	  dst_hdr->csum_offset = 0;
 
-          src_space -= chunk;
-          dst_space -= chunk;
-          tot_space -= chunk;
+	  // We'll update this later. Don't know how many yet.
+	  num_buffers = &dst_hdr->num_buffers;
 
-          if (src_space == 0) {
-            if (tot_space == 0) {
-              // Packet completely copied.
-              dst_fragment += 1;
-              return true;
-            }
+	  dst_ptr += chunk;
+	  src_ptr += chunk;
+	}
 
-            // Otherwise, fetch a new src fragment.
-            src_fragment += 1;
-            src_ptr       = src.fragment[src_fragment];
-            src_space     = src.fragment_length[src_fragment];
-          }
-        }
+	src_space -= chunk;
+	dst_space -= chunk;
+	tot_space -= chunk;
 
+	if (src_space == 0) {
+	  if (tot_space == 0) {
+	    // Packet completely copied.
+	    return true;
+	  }
+
+	  // Otherwise, fetch a new src fragment.
+	  src_fragment += 1;
+	  src_ptr       = src.fragment[src_fragment];
+	  src_space     = src.fragment_length[src_fragment];
+	}
       }
 
-      dst_fragment += 1;
       return false;           // We want more.
     };
 
-    unsigned head = vq_pop_generic(rx_vq(), true, c);
-    if (UNLIKELY(head == 0))
-      // No space. Packet dropped.
-      return;
+    // Now we have our closure that fills a single RX descriptor
+    // chain, let's start popping RX descriptor chains until our
+    // packet is consumed.
 
-    // Calculate packet length. We might have truncated it, because of
-    // missing buffer space.
-    uint32_t plen = src.packet_length - tot_space;
-    vq_push(rx_vq(), head, plen);
+    uint32_t last_tot_space  = tot_space;
+    unsigned num_descriptors = 0; // Descriptors we consumed
+
+    while (tot_space) {
+      unsigned head = vq_pop_generic(rx_vq(), true, c);
+      if (head == INVALID_DESC_ID) break;
+
+      uint32_t bytes_consumed = last_tot_space - tot_space;
+      vq_fill(rx_vq(), head, bytes_consumed, num_descriptors);
+      num_descriptors += 1;
+      last_tot_space   = tot_space;
+    }
+
+    // Update the header with the actual number of descriptors we
+    // consumed. This might still be a null pointer, when the guest
+    // ran out of RX descriptors.
+    if (num_buffers) *num_buffers = num_descriptors;
+
+    vq_flush(rx_vq(), num_descriptors);
   }
 
   void
@@ -134,12 +157,12 @@ namespace Switch {
   }
 
   int
-  VirtioDevice::vq_num_heads(VirtQueue &vq, unsigned int idx)
+  VirtioDevice::vq_num_heads(VirtQueue &vq, unsigned idx)
   {
     /* Callers read a descriptor at vq->last_avail_idx.  Make sure
      * descriptor read does not bypass avail index read. */
-    uint16_t num_heads = __atomic_load_n(&vq.vring.avail->idx,
-                                         __ATOMIC_ACQUIRE) - idx;
+    unsigned avail     = __atomic_load_n(&vq.vring.avail->idx, __ATOMIC_ACQUIRE);
+    uint16_t num_heads = avail - idx;
 
     /* Check if guest isn't doing very strange things with descriptor
        numbers. */
@@ -184,18 +207,18 @@ namespace Switch {
 
   template <typename T>
   int
-  VirtioDevice::vq_pop_generic(VirtQueue &vq, bool writeable_bufs,
-                               T closure)
+  VirtioDevice::vq_pop_generic(VirtQueue &vq, bool writeable_bufs, T closure)
   {
     VRingDesc *desc = vq.vring.desc;
 
-    if (!vq_num_heads(vq, vq.last_avail_idx)) return 0;
+    if (!vq_num_heads(vq, vq.last_avail_idx))
+      return INVALID_DESC_ID;
 
     unsigned max = QUEUE_ELEMENTS;
     unsigned head;
     unsigned i = head = this->vq_get_head(vq, vq.last_avail_idx++);
 
-    /* Collect all the descriptors */
+    // Collect all the descriptors
     do {
       // We need to load this only once. Otherwise, the guest may
       // fool pointer validation.
@@ -210,6 +233,7 @@ namespace Switch {
                    (data == nullptr)))
         throw PortBrokenException(*this, "mixed read/write descriptors");
 
+      // logf("Popped %p+%zx", data, size_t(flen));
       if (closure(data, flen))
         break;
 
@@ -459,12 +483,13 @@ namespace Switch {
       uint32_t supported_features = host_features; /* What do we support? */
       uint32_t bad = (val & ~supported_features) != 0;
       if (bad)
-        logf("Guest features we don't support: %x.\n", bad);
+        logf("Guest features we don't support: %s.\n", features_to_string(bad).c_str());
 
 
       val &= supported_features;
       guest_features = val;
       logf("Negotiated features: %08x", guest_features);
+      logf("%s", features_to_string(guest_features).c_str());
       break;
     }
     case VIRTIO_PCI_STATUS:

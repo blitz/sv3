@@ -15,12 +15,17 @@
 #pragma once
 
 #include <atomic>
+#include <string>
 
 #include <externaldevice.hh>
 #include <switch.hh>
-#include <virtio-constants.h>
+#include <virtio-constants.hh>
 
 namespace Switch {
+
+  enum {
+    INVALID_DESC_ID = ~0U,
+  };
 
   struct VRingDesc
   {
@@ -107,14 +112,30 @@ namespace Switch {
     unsigned vq_get_head (VirtQueue &vq,   unsigned idx);
     unsigned vq_next_desc(VRingDesc *desc, unsigned max);
 
+    /// Pop a set of descriptors. If last_desc is set, it will be set
+    /// to the last descriptor in the chain that was popped. If
+    /// chain_desc is set, it will be made to chain to the first
+    /// descriptor that is popped.
     template <typename T>
     int      vq_pop_generic(VirtQueue &vq, bool writeable_bufs, T closure);
-
     int      vq_pop      (VirtQueue &vq, Packet &elem, bool writeable_bufs);
+
+    /// Fill a single entry in the used ring. idx is used to fill
+    /// multiple entries and is added to the current index.
     void     vq_fill     (VirtQueue &vq, unsigned head, uint32_t len, unsigned idx);
+
+    /// Tell the guest that count entries appeared in the used ring,
+    /// i.e. count descriptor chains are consumed.
     void     vq_flush    (VirtQueue &vq, unsigned count);
+
+    /// This function combines vq_flush and vq_fill when only a single
+    /// chain needs to be handled.
     void     vq_push     (VirtQueue &vq, unsigned head, uint32_t len);
+
     void     vq_irq      (VirtQueue &vq);
+
+    /// Return a string describing the feature bit mask.
+    static std::string features_to_string(uint32_t features);
 
   public:
 
