@@ -110,7 +110,7 @@ namespace Switch {
     void     vq_set_addr (VirtQueue &vq,   uint64_t addr);
     int      vq_num_heads(VirtQueue &vq,   unsigned idx);
     unsigned vq_get_head (VirtQueue &vq,   unsigned idx);
-    unsigned vq_next_desc(VRingDesc *desc, unsigned max);
+    unsigned vq_next_desc(VRingDesc *desc);
 
     /// Pop a set of descriptors. If last_desc is set, it will be set
     /// to the last descriptor in the chain that was popped. If

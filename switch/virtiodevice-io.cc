@@ -71,25 +71,21 @@ namespace Switch {
 	  movs(dst_ptr, src_ptr, chunk);
 	} else {
 	  // Special case for header.
+	  virtio_net_hdr_mrg_rxbuf       *dst_hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf       *>(dst_ptr);
+	  virtio_net_hdr_mrg_rxbuf const *src_hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf const *>(src_ptr);
+
 	  if (UNLIKELY(chunk < sizeof(struct virtio_net_hdr_mrg_rxbuf)))
 	    throw PortBrokenException(*this, "no space for contiguous header");
 	  chunk = sizeof(struct virtio_net_hdr_mrg_rxbuf);
 
-	  virtio_net_hdr_mrg_rxbuf       *dst_hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf       *>(dst_ptr);
-	  virtio_net_hdr_mrg_rxbuf const *src_hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf const *>(src_ptr);
-	  dst_hdr->flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
+	  memcpy(dst_ptr, src_ptr, chunk);
+	  dst_ptr += chunk;
+	  src_ptr += chunk;
 
-	  dst_hdr->gso_type    = src_hdr->gso_type;
-	  dst_hdr->hdr_len     = src_hdr->hdr_len;
-	  dst_hdr->gso_size    = src_hdr->gso_size;
-	  dst_hdr->csum_start  = 0;
-	  dst_hdr->csum_offset = 0;
+	  dst_hdr->flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
 
 	  // We'll update this later. Don't know how many yet.
 	  num_buffers = &dst_hdr->num_buffers;
-
-	  dst_ptr += chunk;
-	  src_ptr += chunk;
 	}
 
 	src_space -= chunk;
@@ -190,17 +186,18 @@ namespace Switch {
   }
 
   unsigned
-  VirtioDevice::vq_next_desc(VRingDesc *desc, unsigned max)
+  VirtioDevice::vq_next_desc(VRingDesc *desc)
   {
     unsigned int next;
 
     /* If this descriptor says it doesn't chain, we're done. */
     if (not (desc->flags & VRING_DESC_F_NEXT))
-      return max;
+      return INVALID_DESC_ID;
 
     /* Check they're not leading us off end of descriptors. */
     next = __atomic_load_n(&desc->next, __ATOMIC_ACQUIRE);
-    if (UNLIKELY(next >= max)) throw PortBrokenException(*this, "next beyond bounds");
+    if (UNLIKELY(next >= QUEUE_ELEMENTS))
+      throw PortBrokenException(*this, "next beyond bounds");
 
     return next;
   }
@@ -214,7 +211,6 @@ namespace Switch {
     if (!vq_num_heads(vq, vq.last_avail_idx))
       return INVALID_DESC_ID;
 
-    unsigned max = QUEUE_ELEMENTS;
     unsigned head;
     unsigned i = head = this->vq_get_head(vq, vq.last_avail_idx++);
 
@@ -237,7 +233,7 @@ namespace Switch {
       if (closure(data, flen))
         break;
 
-    } while ((i = vq_next_desc(&desc[i], max)) != max);
+    } while ((i = vq_next_desc(&desc[i])) != INVALID_DESC_ID);
 
     vq.inuse++;
     return head;
