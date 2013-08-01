@@ -19,6 +19,7 @@
 #include <sys/eventfd.h>
 
 #include <timer.hh>
+#include <tracing.hh>
 
 namespace Switch {
 
@@ -103,6 +104,8 @@ namespace Switch {
     logf("Main loop entered. Idle poll time is %uus. Batch size is %u.",
 	 _poll_us, _batch_size);
 
+    trace(WAKEUP);
+
     do {			// Main loop
       enum {
 	WORK,
@@ -110,6 +113,7 @@ namespace Switch {
 	NOTIFICATION_ENABLE,
       } state = WORK;
 
+      trace(QUIESCENT);
       rcu_quiescent_state();
 
       // Casting madness... Otherwise this won't compile.
@@ -150,6 +154,7 @@ namespace Switch {
 	  // The switch was idle for the first time.
 	  if (_poll_us) {
 	    // Start the idle clock.
+            trace(WENT_IDLE, 0, 0, now);
 	    state = IDLE;
 	    idle_timer.arm(now);
 	  } else {
@@ -179,6 +184,7 @@ namespace Switch {
         continue;
 
       // Block
+      trace(BLOCK);
       rcu_thread_offline();
       {
 	uint64_t val;
@@ -187,6 +193,7 @@ namespace Switch {
 	  break;
       }
       rcu_thread_online();
+      trace(WAKEUP);
 
 
     } while (not should_shutdown());

@@ -19,6 +19,7 @@
 #include <virtiodevice.hh>
 #include <switch.hh>
 #include <session.hh>
+#include <tracing.hh>
 
 namespace Switch {
 
@@ -28,6 +29,8 @@ namespace Switch {
     assert(src.src_port != this);
 
     if (UNLIKELY(not (status & VIRTIO_CONFIG_S_DRIVER_OK))) return;
+
+    trace(PACKET_RX, _session._fd, 0);
 
     // Deal with offloads. Check whether the guest can receive all our
     // offloads, if not always use the slow path (which is not implemented...).
@@ -140,6 +143,7 @@ namespace Switch {
     if (UNLIKELY(vq.pending_irq) and LIKELY(_irq_fd[vector])) {
       vq.pending_irq = false;
 
+      trace(IRQ, _session._fd);
       uint64_t val = 1;
       write(_irq_fd[vector], &val, sizeof(val));
     }
@@ -323,6 +327,8 @@ namespace Switch {
 
     if (UNLIKELY(p.fragment_length[0] != sizeof(struct virtio_net_hdr_mrg_rxbuf)))
       throw PortBrokenException(*this, "invalid header size");
+
+    trace(PACKET_TX, _session._fd, p.packet_length);
 
     // XXX Do something with the packet.
 

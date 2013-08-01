@@ -16,6 +16,9 @@
 #include <cstdio>
 #include <algorithm>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <getopt.h>
 
@@ -23,9 +26,35 @@
 #include <switch.hh>
 #include <listener.hh>
 #include <config.hh>
+#include <tracing.hh>
+
+/// Tracing
+
+#ifdef TRACING
+
+void open_trace_file(std::string file)
+{
+  int fd = open(file.c_str(), O_RDWR | O_TRUNC | O_CREAT, 0644);
+  if (fd < 0 or ftruncate(fd, Switch::TRACE_SIZE) != 0) {
+    perror("open");
+    exit(EXIT_FAILURE);
+  }
+  
+  void *r = mmap(nullptr, Switch::TRACE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
+                      fd, 0);
+  if (r == MAP_FAILED) {
+    perror("mmap");
+    exit(EXIT_FAILURE);
+  }
+
+  Switch::trace_buffer = reinterpret_cast<char *>(r);
+
+  close(fd);
+}
+
+#endif
 
 /// Signal handling
-
 
 static Switch::Switch *signal_switch;
 static bool            signal_caught;
@@ -76,12 +105,18 @@ int main(int argc, char **argv)
     { "force",            no_argument, &force,                       1  },
     { "poll-us",          required_argument, 0,                     'p' },
     { "batch-size",       required_argument, 0,                     'b' },
+#ifdef TRACING
+    { "trace-file",       required_argument, 0,                     't' },
+#endif
     { 0, 0, 0, 0 },
   };
 
+  int         poll_us    = 50;
+  int         batch_size = 16;
+#ifdef TRACING
+  std::string trace_file;
+#endif
 
-  int poll_us    = 50;
-  int batch_size = 16;
   int opt;
   int opt_idx;
 
@@ -98,14 +133,24 @@ int main(int argc, char **argv)
     case 'b':
       batch_size = atoi(optarg);
       break;
+#ifdef TRACING
+    case 't':
+      trace_file = optarg;
+      break;
+#endif
     case '?':
     default: /* '?' */
       fprintf(stderr,
-              "Usage: %s [-f|--force] [--poll-us us] [--batch-size n]\n",
+              "Usage: %s [-f|--force] [--poll-us us] [--batch-size n]\n"
+              "          [--trace-file file]\n",
               argv[0]);
       return EXIT_FAILURE;
     }
   }
+
+#ifdef TRACING
+  open_trace_file(trace_file);
+#endif
 
   try {
     Switch::Switch   sv3(poll_us, batch_size);

@@ -13,6 +13,7 @@ cxx=COMPILER  Force build to use a specific C++ compiler.
 cpu=CPU       Optimize for the given CPU. Passed to -march.
 lto=0/1       Enable link-time optimization. Default is 0.
 asserts=1/0   Enable assertions at runtime. Default is 1.
+tracing=1/0   Enable tracing at runtime. Default is 1.
 qemusrc=dir   Source directory of patched qemu. Default is ../qemu.
 release=0/1   Forces lto=1,asserts=0,debug=0.
 """)
@@ -31,11 +32,13 @@ if 'cxx' in ARGUMENTS:
 debug_enabled   = (int(ARGUMENTS.get('debug', 1)) == 1)
 lto_enabled     = (int(ARGUMENTS.get('lto', 0)) == 1)
 asserts_enabled = (int(ARGUMENTS.get('asserts', 1)) == 1)
+tracing_enabled = (int(ARGUMENTS.get('tracing', 1)) == 1)
 
 if int(ARGUMENTS.get('release', 0)) == 1:
     debug_enabled   = 0
     lto_enabled     = 1
     asserts_enabled = 0
+    tracing_enabled = 0
 
 optflags = ['-g']
 if debug_enabled:
@@ -52,7 +55,10 @@ if lto_enabled:
 if not asserts_enabled:
     host_env.Append(CPPFLAGS = ['-DNDEBUG'])
 
-if not asserts_enabled and lto_enabled and not debug_enabled:
+if tracing_enabled:
+    host_env.Append(CPPFLAGS = ['-DTRACING'])
+
+if not asserts_enabled and lto_enabled and not debug_enabled and not tracing_enabled:
     host_env.Append(CPPFLAGS = ['-DSV3_BENCHMARK_OK'])
 
 host_env.Append(CCFLAGS = optflags, LINKFLAGS = optflags)
