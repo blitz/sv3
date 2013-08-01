@@ -141,6 +141,8 @@ namespace Switch {
 
 	// We have seen action.
 	if (LIKELY(work_done)) {
+          if (state == IDLE)
+            trace(WENT_BUSY);
 	  state = WORK;
 
           if (UNLIKELY(rcu_timer.elapsed(now)))
