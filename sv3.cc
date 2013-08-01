@@ -74,8 +74,6 @@ int main(int argc, char **argv)
 
   static struct option long_options [] = {
     { "force",            no_argument, &force,                       1  },
-    { "no-checksum",      no_argument, &Switch::virtio_checksum,     0  },
-    { "no-segmentation",  no_argument, &Switch::virtio_segmentation, 0  },
     { "poll-us",          required_argument, 0,                     'p' },
     { "batch-size",       required_argument, 0,                     'b' },
     { 0, 0, 0, 0 },
@@ -102,7 +100,9 @@ int main(int argc, char **argv)
       break;
     case '?':
     default: /* '?' */
-      fprintf(stderr, "Usage: %s [-f|--force] [--virtio-{checksum,segmentation}] [--poll-us us] [--batch-size n]\n", argv[0]);
+      fprintf(stderr,
+              "Usage: %s [-f|--force] [--poll-us us] [--batch-size n]\n",
+              argv[0]);
       return EXIT_FAILURE;
     }
   }
