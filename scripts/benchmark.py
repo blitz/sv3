@@ -7,12 +7,15 @@ import os
 import sys
 import math
 import glob
+import itertools
 import time
 import pexpect as e
 import csv
 import argparse
+import random
 
 import topology
+import cgroup
 
 def thread_list_to_str(tl):
     return ",".join([str(t.id) for t in tl])
@@ -20,7 +23,9 @@ def thread_list_to_str(tl):
 net_if    = "eth0"
 qemu_bin  = "../contrib/qemu/x86_64-softmmu/qemu-system-x86_64"
 linux_bin = "../contrib/buildroot/buildroot/output/images/bzImage"
-qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -append quiet\ console=ttyS0"
+qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -append loglevel=3\ quiet\ console=ttyS0\ clocksource=tsc"
+
+all_cgroups = ["js-switch", "js-server", "js-client"]
 
 def check_setup():
     try:
@@ -88,11 +93,13 @@ def qemu_quit(p):
     p.sendcontrol('a')
     p.send('x')
     p.expect(e.EOF)
-    p.close()
+    p.close(force = True)
 
 def create_and_configure(qemu_cmd, is_server, cpus):
     print("Starting %s VM..." % ("server" if is_server else "client"))
-    p = e.spawn("taskset -c %s sh -c '%s'" % (thread_list_to_str(cpus), qemu_cmd), timeout=20)
+    qemu_cmd = cgroup.cgexec_cmd("js-%s" % ("server" if is_server else "client")) + " taskset -c %s sh -c '%s'" % (thread_list_to_str(cpus), qemu_cmd)
+    #print(qemu_cmd)
+    p = e.spawn(qemu_cmd, timeout=20)
     p.setecho(False)
     p.expect_exact("buildroot login: ")
     p.sendline("root")
@@ -129,19 +136,45 @@ def netperf_stream_like(client, test):
 def clear_line():
     print("[2K\r", end="")
 
-def repeat_benchmark(name, repeat, thunk):
-    result = []
+def account(user_list, sys_list, start, end, elapsed):
+    (cpu_user, cpu_sys) = cgroup.CpuUsage.delta(start, end, elapsed)
+    user_list.append(cpu_user)
+    sys_list.append(cpu_sys)
+
+import pdb    
+
+def repeat_benchmark(results, name, repeat, thunk):
+    bench_results   = [name + "_res"]
+    switch_user = [name + "_switch_user"]
+    switch_sys  = [name + "_switch_sys"]
+    client_user = [name + "_client_user"]
+    client_sys  = [name + "_client_sys"]
+    server_user = [name + "_server_user"]
+    server_sys  = [name + "_server_sys"]
+
     stddev_gen = StdDev()
     for i in range(repeat):
         clear_line()
         print("Running %s (%d/%d). %s" % (name, i+1, repeat, stddev_gen.format()), end="")
         sys.stdout.flush()
+
+        start_time  = time.time()
+        start_usage = dict([ (cg, cgroup.cgget_usage(cg)) for cg in all_cgroups ])
         v = thunk()
+        elapsed_time = time.time() - start_time
+        end_usage   = dict([ (cg, cgroup.cgget_usage(cg)) for cg in all_cgroups ])
+
+        account(switch_user, switch_sys, start_usage["js-switch"], end_usage["js-switch"], elapsed_time)
+        account(client_user, client_sys, start_usage["js-client"], end_usage["js-client"], elapsed_time)
+        account(server_user, server_sys, start_usage["js-server"], end_usage["js-server"], elapsed_time)
+
         stddev_gen.update(v)
-        result.append(v)
+        bench_results.append(v)
     clear_line()
     print("%s: %s" % (name, stddev_gen.format()))
-    return result
+
+    for r in [bench_results, switch_user, switch_sys, client_user, client_sys, server_user, server_sys]:
+        results.append(r)
 
 def set_tso(session, enable):
     on_off = "on" if enable else "off"
@@ -152,53 +185,58 @@ def set_tso(session, enable):
     session.expect_exact("tcp-segmentation-offload: %s" % on_off)
 
 
-repeat = 20
+repeat = 10
 def run_benchmark(prefix, client, server):
-    results =  [
-        [prefix + "_udp_rr"] + repeat_benchmark("UDP Request/Response", repeat,
-                                               lambda: 1000000/netperf_rr_like(client, "UDP_RR")),
-        [prefix + "_tcp_rr"] + repeat_benchmark("TCP Request/Response", repeat,
-                                               lambda: 1000000/netperf_rr_like(client, "TCP_RR")),
-        [prefix + "_tcp_cc"] + repeat_benchmark("TCP Connect/Close", repeat,
-                                               lambda: 1000000/netperf_rr_like(client, "TCP_CC")),
-        [prefix + "_tcp_crr"] + repeat_benchmark("TCP Connect/Request/Response", repeat,
-                                               lambda: 1000000/netperf_rr_like(client, "TCP_CRR")),
-        ]
+    results = []
+    repeat_benchmark(results, prefix + "_udp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "UDP_RR"))
+    #repeat_benchmark(results, prefix + "_tcp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_RR"))
+    #repeat_benchmark(results, prefix + "_tcp_cc", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CC"))
+    repeat_benchmark(results, prefix + "_tcp_crr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CRR"))
+
     set_tso(client, True)
     set_tso(server, True)
-    results.append([prefix + "_tcp_stream_tso"] + repeat_benchmark("TCP Stream (TSO)", repeat,
-                                                                   lambda: netperf_stream_like(client, "TCP_STREAM")))
-    results.append([prefix + "_tcp_maerts_tso"] + repeat_benchmark("TCP Maerts (TSO)", repeat,
-                                                                   lambda: netperf_stream_like(client, "TCP_MAERTS")))
+    repeat_benchmark(results, prefix + "_tcp_stream_tso", repeat, lambda: netperf_stream_like(client, "TCP_STREAM"))
+
     set_tso(client, False)
     set_tso(server, False)
-    results.append([prefix + "_tcp_stream"] + repeat_benchmark("TCP Stream", repeat,
-                                                                   lambda: netperf_stream_like(client, "TCP_STREAM")))
-    results.append([prefix + "_tcp_maerts"] + repeat_benchmark("TCP Maerts", repeat,
-                                                                   lambda: netperf_stream_like(client, "TCP_MAERTS")))
+    repeat_benchmark(results, prefix + "_tcp_stream", repeat, lambda: netperf_stream_like(client, "TCP_STREAM"))
+
     return results
 
 def run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus, poll_us, batch_size):
-    print("\n--- externalpci ---")
+    print("--- externalpci ---")
     print("Switch on %s, server on %s, client on %s." % (switch_cpus, server_cpus, client_cpus))
     qemu_externalpci_args = "-mem-path /tmp -device externalpci,socket=/tmp/sv3 -net none "
     qemu_cmd = "%s %s %s" % (qemu_bin, qemu_externalpci_args, qemu_generic)
 
-    switch = e.spawn("taskset -c %s ../sv3 -f --poll-us %u --batch-size %u" % (thread_list_to_str(switch_cpus), poll_us, batch_size))
+    switch_cmd = cgroup.cgexec_cmd("js-switch")
+    switch_cmd += " taskset -c %s ../sv3 -f --poll-us %u --batch-size %u" % (thread_list_to_str(switch_cpus), poll_us, batch_size)
+    #print(switch_cmd)
+    switch = e.spawn(switch_cmd)
     r = switch.expect_exact(["Built with optimal compiler flags.", "Do not use for benchmarking"])
     if (r != 0):
         print("Switch was not built for benchmarking!")
         raise CommandFailed()
     print("Switch is running.")
 
-    server = create_and_configure(qemu_cmd, True, server_cpus)
-    client = create_and_configure(qemu_cmd, False, client_cpus)
-    
-    results = run_benchmark("epci", client, server)
-    
-    qemu_quit(client)
-    qemu_quit(server)
-    switch.close()
+    server = None
+    client = None
+
+    results = []
+    try:
+        server = create_and_configure(qemu_cmd, True, server_cpus)
+        client = create_and_configure(qemu_cmd, False, client_cpus)
+        results = run_benchmark("epci", client, server)
+    except:
+	print("Unexpected error:", sys.exc_info()[0])
+
+    if client:
+        qemu_quit(client)
+
+    if server:
+        qemu_quit(server)
+
+    switch.close(force = True)
 
     return results
 
@@ -270,6 +308,13 @@ def write_csv(name, results):
 def main(args):
     check_setup()
 
+    print("Setting up control groups...")
+    for cg in all_cgroups:
+        cgroup.cgdelete(cg)
+        if 0 != cgroup.cgcreate(cg):
+            print("Could not create control group %s." % cg)
+            exit(1)
+
     topo = topology.get_topology()
     print("Topology: %u Package x %u Cores x %u Threads" % (len(topo), len(topo[0].core), len(topo[0].core[0].thread)))
 
@@ -283,9 +328,9 @@ def main(args):
         client_cpus = any_cpu
     else:
         core_list = topo[-1].core[-4:]
-        switch_cpus = core_list[:2]
-        server_cpus = [core_list[2]]
-        client_cpus = [core_list[3]]
+        switch_cpus = [core_list[0].thread[-1], core_list[1].thread[-1]]
+        server_cpus = [core_list[2].thread[-1]]
+        client_cpus = [core_list[3].thread[-1]]
     
     print("Let the benchmarking commence!")
 
@@ -293,13 +338,18 @@ def main(args):
 
     write_csv("results-vhost-%s.csv" % dstr, run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus))
 
-    for poll_us in range(0,101,10):
-        for batch_size in range(1,32):
-            write_csv("results-sv3-%s-poll%u-batch%u" % (dstr, poll_us, batch_size),
-                      run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus,
-                                                poll_us, batch_size))
+    poll_v  = [0,4,8,12,16,18,24,32,40]
+    batch_v = [1,4,8,16,24,32]
 
+    experiments = [ x for x in itertools.product(poll_v, batch_v)]
+    random.shuffle(experiments)
 
+    for n in range(len(experiments)):
+        poll_us, batch_size = experiments[n]
+        print("\nExperiment %4u/%4u: poll=%u batch=%u" % (n, len(experiments), poll_us, batch_size))
+        write_csv("results-sv3-%s-poll%u-batch%u.csv" % (dstr, poll_us, batch_size),
+                  run_externalpci_benchmark(switch_cpus[:1], server_cpus, client_cpus,
+                                            poll_us, batch_size))
 
 
 if __name__ == "__main__":

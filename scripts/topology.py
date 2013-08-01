@@ -16,11 +16,17 @@ def id_set(glob_name):
 # Topology data structures
 
 class Thread:
+    def __repr__(self):
+        return "<T%u>" % self.id
+
     def __init__(self, t_id, fn):
         self.id = t_id
         self.filename = fn
 
 class Core:
+    def __repr__(self):
+        return "<%s>" % self.thread
+
     def __init__(self, c_id):
         self.id = c_id
         self.thread = []

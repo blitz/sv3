@@ -97,8 +97,8 @@ namespace Switch {
 
   void Switch::loop()
   {
-    Timer rcu_timer(1, 1000000 /* ms */);   
-    Timer idle_timer(_poll_us, 1000 /* us */);
+    Timer rcu_timer(1, 1000 /* ms */);   
+    Timer idle_timer(_poll_us, 1000000 /* us */);
 
     logf("Main loop entered. Idle poll time is %uus. Batch size is %u.",
 	 _poll_us, _batch_size);

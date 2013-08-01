@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Buildroot 2013.08-git-g24262cd Configuration
+# Buildroot 2013.08-git-g0f3a6bf Configuration
 #
 BR2_HAVE_DOT_CONFIG=y
 BR2_ARCH_IS_64=y
@@ -107,7 +107,7 @@ BR2_TOOLCHAIN_BUILDROOT=y
 BR2_KERNEL_HEADERS_3_10=y
 # BR2_KERNEL_HEADERS_VERSION is not set
 # BR2_KERNEL_HEADERS_SNAP is not set
-BR2_DEFAULT_KERNEL_HEADERS="3.10"
+BR2_DEFAULT_KERNEL_HEADERS="3.10.4"
 BR2_TOOLCHAIN_BUILDROOT_UCLIBC=y
 # BR2_TOOLCHAIN_BUILDROOT_EGLIBC is not set
 BR2_TOOLCHAIN_BUILDROOT_LIBC="uclibc"
@@ -130,6 +130,7 @@ BR2_TOOLCHAIN_BUILDROOT_WCHAR=y
 # BR2_PTHREADS_OLD is not set
 BR2_PTHREADS_NATIVE=y
 # BR2_PTHREAD_DEBUG is not set
+BR2_UCLIBC_INSTALL_UTILS=y
 # BR2_UCLIBC_INSTALL_TEST_SUITE is not set
 BR2_UCLIBC_TARGET_ARCH="x86_64"
 
@@ -161,7 +162,6 @@ BR2_GCC_VERSION="4.8.1"
 BR2_EXTRA_GCC_CONFIG_OPTIONS=""
 # BR2_INSTALL_OBJC is not set
 # BR2_INSTALL_FORTRAN is not set
-BR2_GCC_SHARED_LIBGCC=y
 BR2_GCC_ENABLE_TLS=y
 # BR2_GCC_ENABLE_OPENMP is not set
 # BR2_PACKAGE_HOST_GDB is not set
@@ -258,6 +258,7 @@ BR2_PACKAGE_BUSYBOX_CONFIG="package/busybox/busybox-1.21.x.config"
 # BR2_PACKAGE_MUSEPACK is not set
 # BR2_PACKAGE_OPUS_TOOLS is not set
 # BR2_PACKAGE_PULSEAUDIO is not set
+# BR2_PACKAGE_TSTOOLS is not set
 # BR2_PACKAGE_VORBIS_TOOLS is not set
 # BR2_PACKAGE_WAVPACK is not set
 # BR2_PACKAGE_YAVTA is not set
@@ -278,6 +279,7 @@ BR2_PACKAGE_BUSYBOX_CONFIG="package/busybox/busybox-1.21.x.config"
 # BR2_PACKAGE_DHRYSTONE is not set
 BR2_PACKAGE_DSTAT=y
 # BR2_PACKAGE_DMALLOC is not set
+# BR2_PACKAGE_DROPWATCH is not set
 
 #
 # gdb/gdbserver require a toolchain with thread and thread debug support
@@ -389,7 +391,7 @@ BR2_PACKAGE_PV=y
 # BR2_PACKAGE_GOB2 is not set
 
 #
-# midori requires C++, WCHAR in toolchain and libgtk2
+# midori requires C++, WCHAR, threading in toolchain and libgtk2
 #
 
 #
@@ -488,7 +490,7 @@ BR2_PACKAGE_PCIUTILS=y
 #
 
 #
-# udisks requires /dev mgmnt set to udev under System configuration
+# udisks requires /dev mgmnt set to udev under System configuration and a toolchain with WCHAR and threading support
 #
 # BR2_PACKAGE_USB_MODESWITCH is not set
 # BR2_PACKAGE_USB_MODESWITCH_DATA is not set
@@ -551,6 +553,7 @@ BR2_PACKAGE_PYTHON_UNICODEDATA=y
 # BR2_PACKAGE_PYTHON_PROTOBUF is not set
 # BR2_PACKAGE_PYTHON_PYGAME is not set
 # BR2_PACKAGE_PYTHON_PYPARSING is not set
+# BR2_PACKAGE_PYTHON_PYRO is not set
 # BR2_PACKAGE_PYTHON_SERIAL is not set
 # BR2_PACKAGE_PYTHON_SETUPTOOLS is not set
 # BR2_PACKAGE_PYTHON_THRIFT is not set
@@ -568,6 +571,7 @@ BR2_PACKAGE_PYTHON_UNICODEDATA=y
 # BR2_PACKAGE_ALSA_LIB is not set
 # BR2_PACKAGE_AUDIOFILE is not set
 # BR2_PACKAGE_CELT051 is not set
+# BR2_PACKAGE_FDK_AAC is not set
 # BR2_PACKAGE_LIBAO is not set
 # BR2_PACKAGE_LIBCDAUDIO is not set
 # BR2_PACKAGE_LIBCUE is not set
@@ -603,6 +607,8 @@ BR2_PACKAGE_ZLIB=y
 # BR2_PACKAGE_GNUTLS is not set
 # BR2_PACKAGE_LIBGCRYPT is not set
 # BR2_PACKAGE_LIBGPG_ERROR is not set
+# BR2_PACKAGE_LIBGPGME is not set
+# BR2_PACKAGE_LIBASSUAN is not set
 # BR2_PACKAGE_LIBMCRYPT is not set
 # BR2_PACKAGE_LIBMHASH is not set
 # BR2_PACKAGE_LIBNSS is not set
@@ -632,6 +638,7 @@ BR2_PACKAGE_OPENSSL=y
 # BR2_PACKAGE_LIBFUSE is not set
 # BR2_PACKAGE_LIBLOCKFILE is not set
 # BR2_PACKAGE_LIBSYSFS is not set
+# BR2_PACKAGE_LOCKDEV is not set
 
 #
 # Graphics
@@ -654,6 +661,7 @@ BR2_PACKAGE_OPENSSL=y
 # BR2_PACKAGE_LIBRAW is not set
 # BR2_PACKAGE_LIBRSVG is not set
 # BR2_PACKAGE_LIBSVG is not set
+# BR2_PACKAGE_LIBSVG_CAIRO is not set
 # BR2_PACKAGE_LIBSVGTINY is not set
 # BR2_PACKAGE_LIBUNGIF is not set
 # BR2_PACKAGE_OPENCV is not set
@@ -662,10 +670,6 @@ BR2_PACKAGE_OPENSSL=y
 # BR2_PACKAGE_POPPLER is not set
 # BR2_PACKAGE_TIFF is not set
 # BR2_PACKAGE_WAYLAND is not set
-
-#
-# webkit requires C++, WCHAR in toolchain and libgtk2
-#
 # BR2_PACKAGE_WEBP is not set
 # BR2_PACKAGE_ZXING is not set
 
@@ -680,6 +684,7 @@ BR2_PACKAGE_OPENSSL=y
 #
 # libatasmart requires udev to be enabled
 #
+# BR2_PACKAGE_LIBCEC is not set
 # BR2_PACKAGE_LIBRAW1394 is not set
 # BR2_PACKAGE_TSLIB is not set
 # BR2_PACKAGE_LIBFREEFARE is not set
@@ -811,6 +816,7 @@ BR2_PACKAGE_LIBFFI=y
 # BR2_PACKAGE_LIBTASN1 is not set
 # BR2_PACKAGE_LIBTPL is not set
 # BR2_PACKAGE_LIBSECCOMP is not set
+# BR2_PACKAGE_LIBUNWIND is not set
 # BR2_PACKAGE_LIBURCU is not set
 
 #
@@ -958,7 +964,7 @@ BR2_PACKAGE_NUTTCP=y
 # BR2_PACKAGE_OLSR is not set
 # BR2_PACKAGE_OPENNTPD is not set
 # BR2_PACKAGE_OPENOBEX is not set
-BR2_PACKAGE_OPENSSH=y
+# BR2_PACKAGE_OPENSSH is not set
 # BR2_PACKAGE_OPENSWAN is not set
 # BR2_PACKAGE_OPENVPN is not set
 # BR2_PACKAGE_PORTMAP is not set
@@ -983,6 +989,7 @@ BR2_PACKAGE_OPENSSH=y
 # BR2_PACKAGE_SPICE_PROTOCOL is not set
 # BR2_PACKAGE_SPICE is not set
 # BR2_PACKAGE_SQUID is not set
+# BR2_PACKAGE_STRONGSWAN is not set
 # BR2_PACKAGE_STUNNEL is not set
 BR2_PACKAGE_TCPDUMP=y
 # BR2_PACKAGE_TCPDUMP_SMB is not set
@@ -1120,7 +1127,7 @@ BR2_LINUX_KERNEL_LATEST_VERSION=y
 # BR2_LINUX_KERNEL_CUSTOM_VERSION is not set
 # BR2_LINUX_KERNEL_CUSTOM_TARBALL is not set
 # BR2_LINUX_KERNEL_CUSTOM_GIT is not set
-BR2_LINUX_KERNEL_VERSION="3.10"
+BR2_LINUX_KERNEL_VERSION="3.10.4"
 BR2_LINUX_KERNEL_PATCH=""
 # BR2_LINUX_KERNEL_USE_DEFCONFIG is not set
 BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y
@@ -1147,6 +1154,7 @@ BR2_LINUX_KERNEL_BZIMAGE=y
 # BR2_PACKAGE_DOSFSTOOLS_DOSFSLABEL is not set
 # BR2_PACKAGE_DOSFSTOOLS_MKDOSFS is not set
 # BR2_ELF2FLT is not set
+# BR2_VFP_FLOAT is not set
 
 #
 # Legacy options removed in 2013.05

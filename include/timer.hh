@@ -43,7 +43,7 @@ namespace Switch {
     }
 
     Timer(unsigned periods, unsigned frequency)
-      : _period_cycles(double(cycles_per_second()) * periods / frequency),
+      : _period_cycles((double(cycles_per_second()) * periods) / frequency),
         _end_time(0)
     {}
   };
