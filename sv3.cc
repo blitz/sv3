@@ -22,6 +22,10 @@
 #include <signal.h>
 #include <getopt.h>
 
+#include <string>
+#include <sstream>
+
+
 #include <hash/ethernet.hh>
 #include <switch.hh>
 #include <listener.hh>
@@ -34,6 +38,13 @@
 
 void open_trace_file(std::string file)
 {
+  if (not file.length()) {
+    std::stringstream ss;
+    ss << "trace-" << getpid();
+    file = ss.str();
+  }
+
+  printf("Trace output is in '%s'.\n\n", file.c_str());
   int fd = open(file.c_str(), O_RDWR | O_TRUNC | O_CREAT, 0644);
   if (fd < 0 or ftruncate(fd, Switch::TRACE_SIZE) != 0) {
     perror("open");

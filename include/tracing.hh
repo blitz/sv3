@@ -25,7 +25,6 @@ namespace Switch {
     PACKET_RX,
     PACKET_TX,
     WENT_IDLE,
-    WENT_BUSY,
     IRQ,
     QUIESCENT,
   };
