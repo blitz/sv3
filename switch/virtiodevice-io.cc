@@ -143,9 +143,14 @@ namespace Switch {
     if (UNLIKELY(vq.pending_irq) and LIKELY(_irq_fd[vector])) {
       vq.pending_irq = false;
 
-      trace(IRQ, _session._fd);
-      uint64_t val = 1;
-      write(_irq_fd[vector], &val, sizeof(val));
+      if (not (__atomic_load_n(&vq.vring.avail->flags, __ATOMIC_ACQUIRE) &
+	       VRING_AVAIL_F_NO_INTERRUPT)) {
+	// Guest asks to be interrupted.
+	isr.store(1, std::memory_order_release);
+	trace(IRQ, _session._fd);
+	uint64_t val = 1;
+	write(_irq_fd[vector], &val, sizeof(val));
+      }
     }
   }
 
@@ -289,21 +294,14 @@ namespace Switch {
   {
     uint16_t oldv, newv;
     VRingUsed  *used  = vq.vring.used;
-    VRingAvail *avail = vq.vring.avail;
 
     oldv = __atomic_load_n(&used->idx, __ATOMIC_ACQUIRE);
     newv = oldv + count;
     __atomic_store_n(&used->idx, newv, __ATOMIC_RELEASE);
     vq.inuse -= count;
 
-    // XXX This might also work with just assigning the result of the
-    // test to pending_irq and destroying earlier scheduled IRQs?
-    if (not (__atomic_load_n(&avail->flags, __ATOMIC_ACQUIRE) &
-             VRING_AVAIL_F_NO_INTERRUPT)) {
-      // Guest asks to be interrupted.
-      vq.pending_irq = true;
-      isr.store(1, std::memory_order_release);
-    }
+    // Guest may need to be interrupted. Check this in poll_irq.
+    vq.pending_irq = true;
   }
 
 
