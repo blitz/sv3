@@ -190,7 +190,7 @@ def run_benchmark(prefix, client, server):
     results = []
     repeat_benchmark(results, prefix + "_udp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "UDP_RR"))
     #repeat_benchmark(results, prefix + "_tcp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_RR"))
-    #repeat_benchmark(results, prefix + "_tcp_cc", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CC"))
+    repeat_benchmark(results, prefix + "_tcp_cc",  repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CC"))
     repeat_benchmark(results, prefix + "_tcp_crr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CRR"))
 
     set_tso(client, True)
@@ -338,8 +338,8 @@ def main(args):
 
     write_csv("results-vhost-%s.csv" % dstr, run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus))
 
-    poll_v  = [0,4,8,12,16,18,24,32,40]
-    batch_v = [1,4,8,16,24,32]
+    poll_v  = [0,1,2,3,4,8,12,16,20,30,40,50,100]
+    batch_v = [1,4,8,16,32,64]
 
     experiments = [ x for x in itertools.product(poll_v, batch_v)]
     random.shuffle(experiments)
