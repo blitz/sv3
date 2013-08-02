@@ -4,11 +4,12 @@
 
 import os
 import pexpect
+import pwd
 
 USER_HZ = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 
 def cgcreate(name):
-    user = os.getlogin()
+    user = pwd.getpwuid(os.getuid())[0]
     return os.system("sudo cgcreate -a %s:%s -t %s:%s -g cpuacct:/%s" % (user, user, user, user, name))
 
 def cgdelete(name):
