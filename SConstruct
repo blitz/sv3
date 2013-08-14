@@ -163,4 +163,6 @@ if pcap_is_available:
 else:
     print("Not building test/packets! Not running tests!")
 
+host_env.Program('test/membw', ['test/membw.cc'])
+
 # EOF
