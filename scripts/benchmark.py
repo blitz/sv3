@@ -338,8 +338,8 @@ def main(args):
 
     write_csv("results-vhost-%s.csv" % dstr, run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus))
 
-    poll_v  = [0,1,2,3,4,8,12,16,20,30,40,50,100]
-    batch_v = [1,4,8,16,32,64]
+    poll_v  = range(0,50,2) 
+    batch_v = range(0,60,4)[1:]
 
     experiments = [ x for x in itertools.product(poll_v, batch_v)]
     random.shuffle(experiments)
