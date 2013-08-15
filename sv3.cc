@@ -24,13 +24,14 @@
 
 #include <string>
 #include <sstream>
+#include <typeinfo>
 
-
-#include <hash/ethernet.hh>
+#include <exceptions.hh>
 #include <switch.hh>
 #include <listener.hh>
 #include <config.hh>
 #include <tracing.hh>
+#include <upstream.hh>
 
 /// Tracing
 
@@ -119,6 +120,7 @@ int main(int argc, char **argv)
 #ifdef TRACING
     { "trace-file",       required_argument, 0,                     't' },
 #endif
+    { "upstream-port",    required_argument, 0,                     'u' },
     { 0, 0, 0, 0 },
   };
 
@@ -127,6 +129,8 @@ int main(int argc, char **argv)
 #ifdef TRACING
   std::string trace_file;
 #endif
+
+  std::vector<std::string> upstream_port;
 
   int opt;
   int opt_idx;
@@ -149,11 +153,17 @@ int main(int argc, char **argv)
       trace_file = optarg;
       break;
 #endif
+    case 'u':
+      upstream_port = string_split(optarg, ',');
+      if (upstream_port.size() >= 1)
+	break;
+      // FALLTHROUGH
     case '?':
     default: /* '?' */
       fprintf(stderr,
               "Usage: %s [-f|--force] [--poll-us us] [--batch-size n]\n"
-              "          [--trace-file file]\n",
+              "          [--trace-file file]\n"
+	      "          [--upstream-port <type>,<arg1>,<arg2>,...]\n",
               argv[0]);
       return EXIT_FAILURE;
     }
@@ -167,6 +177,10 @@ int main(int argc, char **argv)
     Switch::Switch   sv3(poll_us, batch_size);
     Switch::Listener listener(sv3, force);
 
+    if (upstream_port.size() != 0)
+      Switch::create_upstream_port(sv3, upstream_port);
+
+
     struct sigaction sa;
     sigemptyset(&sa.sa_mask);
     sa.sa_handler   = sigint_handler;
@@ -179,6 +193,9 @@ int main(int argc, char **argv)
     sv3.loop();
 
     return EXIT_SUCCESS;
+  } catch (Switch::Exception &e) {
+    fprintf(stderr, "\n%s:\n%s\n",
+            demangle(typeid(e).name()).c_str(), e.reason().c_str());
   } catch (std::system_error &e) {
     fprintf(stderr, "\nFatal system error: '%s'\n", e.what());
   }

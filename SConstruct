@@ -13,7 +13,7 @@ cxx=COMPILER  Force build to use a specific C++ compiler.
 cpu=CPU       Optimize for the given CPU. Passed to -march.
 lto=0/1       Enable link-time optimization. Default is 0.
 asserts=1/0   Enable assertions at runtime. Default is 1.
-tracing=1/0   Enable tracing at runtime. Default is 1.
+tracing=1/0   Enable tracing at runtime. Default is 0.
 qemusrc=dir   Source directory of patched qemu. Default is ../qemu.
 release=0/1   Forces lto=1,asserts=0,debug=0.
 """)
@@ -23,6 +23,10 @@ release=0/1   Forces lto=1,asserts=0,debug=0.
 host_env = Environment(CCFLAGS = ['-pthread'],
                        CXXFLAGS = [],
                        LINKFLAGS = ['-pthread'],
+                       # We would like to enforce POSIX here, but
+                       #libstdc++ is an asshole and always defines
+                       #_GNU_SOURCE, which defeats the purpose...
+                       #CPPDEFINES = {'_POSIX_C_SOURCE' : '200112L'},
                        CPPPATH = ['#include'])
 
 if 'cxx' in ARGUMENTS:
@@ -32,7 +36,7 @@ if 'cxx' in ARGUMENTS:
 debug_enabled   = (int(ARGUMENTS.get('debug', 1)) == 1)
 lto_enabled     = (int(ARGUMENTS.get('lto', 0)) == 1)
 asserts_enabled = (int(ARGUMENTS.get('asserts', 1)) == 1)
-tracing_enabled = (int(ARGUMENTS.get('tracing', 1)) == 1)
+tracing_enabled = (int(ARGUMENTS.get('tracing', 0)) == 1)
 
 if int(ARGUMENTS.get('release', 0)) == 1:
     debug_enabled   = 0

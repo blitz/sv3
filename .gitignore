@@ -9,3 +9,4 @@
 /sv3-remote
 core.*
 /version.inc
+/trace-*

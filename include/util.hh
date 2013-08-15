@@ -14,8 +14,14 @@
 
 #pragma once
 
-#include <tuple>
 #include <cstdint>
+#include <cxxabi.h>
+
+#include <tuple>
+#include <string>
+#include <sstream>
+#include <vector>
+
 
 static inline uint64_t rdtsc()
 {
@@ -97,5 +103,25 @@ public:
   }
 
 };
+
+static inline
+std::vector<std::string> string_split(std::string const &str, char delimiter)
+{
+  std::stringstream         ss(str);
+  std::vector<std::string>  res;
+
+  for (std::string item; std::getline(ss, item, delimiter); )
+    res.push_back(item);
+
+  return res;
+}
+
+static inline std::string demangle(const char *name)
+{
+  char   buf[1024];
+  size_t size = sizeof(buf);
+  int    status;
+  return abi::__cxa_demangle (name, buf, &size, &status);
+}
 
 // EOF
