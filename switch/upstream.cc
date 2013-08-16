@@ -30,7 +30,7 @@ namespace Switch {
 				 "Try something like --upstream-port ixgbe,/dev/vfio/8,0000:02:00.0\n");
 
       VfioGroup group(args[1]);
-      Intel82599Port *device = group.get_device<Intel82599Port, Switch &>(args[2], sw, "upstream");
+      UNUSED Intel82599Port *device = group.get_device<Intel82599Port, Switch &>(args[2], sw, "upstream");
 
     } else {
       throw ConfigurationError("Unknown upstream port type. We only know 'ixgbe'.\n");
