@@ -59,7 +59,7 @@ namespace Switch {
 	// Mark the packet as done when we leave this scope. We make
 	// sure to call this even if one of the receive() methods
 	// throws an exception.
-	Finally<Port, void, Packet &> when_done(src_port, &Port::mark_done, p);
+	Finally<Port, void, Packet::CompletionInfo &> when_done(src_port, &Port::mark_done, p.completion_info);
 
 	auto &ehdr = p.ethernet_header();
 	// logf("Destination %s", ehdr.dst.to_str());

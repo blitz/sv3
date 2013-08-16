@@ -26,7 +26,7 @@ namespace Switch {
   void
   VirtioDevice::receive(Packet &src)
   {
-    assert(src.src_port != this);
+    assert(src.completion_info.src_port != this);
 
     if (UNLIKELY(not (status & VIRTIO_CONFIG_S_DRIVER_OK))) return;
 
@@ -272,7 +272,7 @@ namespace Switch {
       return false; // We want more
     };
 
-    p.virtio.index = vq_pop_generic(vq, writeable_bufs, c);
+    p.completion_info.virtio.index = vq_pop_generic(vq, writeable_bufs, c);
     return p.fragments;
   }
 
@@ -335,9 +335,9 @@ namespace Switch {
 
 
   void
-  VirtioDevice::mark_done(Packet &p)
+  VirtioDevice::mark_done(Packet::CompletionInfo &c)
   {
-    vq_push(tx_vq(), p.virtio.index, 0);
+    vq_push(tx_vq(), c.virtio.index, 0);
   }
 
   uint64_t

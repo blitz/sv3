@@ -183,9 +183,9 @@ namespace Switch {
 
 
     virtual bool poll     (Packet &p, bool enable_notifications) override;
-    virtual void receive  (Packet &p) override;
-    virtual void mark_done(Packet &p) override;
-    virtual void poll_irq ()          override;
+    virtual void receive  (Packet &p)                            override;
+    virtual void mark_done(Packet::CompletionInfo &p)            override;
+    virtual void poll_irq ()                                     override;
 
     VirtioDevice(Session &session);
   };

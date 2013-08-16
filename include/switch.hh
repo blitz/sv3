@@ -55,7 +55,7 @@ namespace Switch {
 
     /// This method is called on a packet returned by poll when the
     /// switch doesn't need to access packet data anymore.
-    virtual void mark_done(Packet &p) = 0;
+    virtual void mark_done(Packet::CompletionInfo &p) = 0;
 
     /// Check whether interrupts are pending and deliver them. Default
     /// method is empty.

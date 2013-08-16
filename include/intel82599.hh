@@ -146,7 +146,7 @@ namespace Switch {
 
     void receive(Packet &p) override;
     bool poll(Packet &p, bool enable_notifications) override;
-    void mark_done(Packet &p) override;
+    void mark_done(Packet::CompletionInfo &p) override;
 
     Intel82599Port(VfioGroup group, int fd,
 		   Switch &sw, std::string name);

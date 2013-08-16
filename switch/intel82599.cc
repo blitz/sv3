@@ -334,11 +334,12 @@ namespace Switch {
 
     // Construct a virtio header first.
     p.fragments = 1;
-    p.fragment_length[0] = sizeof(p.intel82599.hdr);
-    p.packet_length      = sizeof(p.intel82599.hdr);
-    p.fragment[0]        = (uint8_t *)&p.intel82599.hdr;
+    p.fragment_length[0] = sizeof(p.completion_info.intel82599.hdr);
+    p.packet_length      = sizeof(p.completion_info.intel82599.hdr);
+    p.fragment[0]        = (uint8_t *)&p.completion_info.intel82599.hdr;
 
-    memset(&p.intel82599.hdr, 0, sizeof(p.intel82599.hdr));
+    memset(&p.completion_info.intel82599.hdr, 0,
+	   sizeof(p.completion_info.intel82599.hdr));
     // XXX Fill out header with checksum info
     // When IPCS or L4CS is set, check IPE or TCPE in Error field
 
@@ -350,7 +351,7 @@ namespace Switch {
 
     // Fill fragment list backwards.
     unsigned cur_idx    = _shadow_rdh0;
-    p.intel82599.rx_idx = cur_idx;
+    p.completion_info.intel82599.rx_idx = cur_idx;
 
     for (unsigned cur_frag = fragments; cur_frag > 0; cur_frag--) {
       auto &info = _rx_buffers[cur_idx];
@@ -382,10 +383,10 @@ namespace Switch {
     return true;
   }
 
-  void Intel82599Port::mark_done(Packet &p)
+  void Intel82599Port::mark_done(Packet::CompletionInfo &c)
   {
     unsigned not_first;
-    unsigned idx = p.intel82599.rx_idx;
+    unsigned idx = c.intel82599.rx_idx;
     do {
       unsigned   next_idx = _rx_buffers[idx].rsc_last;
       rx_buffer *buf      = _rx_buffers[idx].buffer;

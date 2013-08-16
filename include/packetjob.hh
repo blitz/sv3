@@ -29,22 +29,23 @@ namespace Switch {
 
     uint32_t packet_length;	// Length of packet in bytes
     uint8_t  fragments;		// Number of fragments
-    Port    *src_port;		// Port this packet originated
 
     // Port-private data. Set in src_port->poll() and read in
     // src_port->mark_done(), effectively implementing a poor man's
     // closure.
-    union {
-      struct {
-	unsigned index;
-      } virtio;
-      struct {
-	struct virtio_net_hdr_mrg_rxbuf hdr;
-
-	// Queue index of last buffer in buffer chain.
-	uint16_t rx_idx;
-      } intel82599;
-    };
+    struct CompletionInfo {
+      Port    *src_port;	// Port this packet originated
+      union {
+	struct {
+	  unsigned index;
+	} virtio;
+	struct {
+	  struct virtio_net_hdr_mrg_rxbuf hdr;
+	  // Queue index of last buffer in buffer chain.
+	  uint16_t rx_idx;
+	} intel82599;
+      };
+    } completion_info;
 
     Ethernet::Header const &ethernet_header() const
     {
@@ -58,9 +59,8 @@ namespace Switch {
     void copy_from(Packet const &src, virtio_net_hdr const *hdr);
 
     Packet(Port *src_port)
-      : packet_length(0), fragments(0),
-	src_port(src_port)
-    { }
+      : packet_length(0), fragments(0)
+    { completion_info.src_port = src_port; }
   };
 
 }
