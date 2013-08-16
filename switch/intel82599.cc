@@ -332,14 +332,15 @@ namespace Switch {
     // Received a complete packet. Backtrace our steps and build a
     // fragment list.
 
+    auto &last_info = _rx_buffers[_shadow_rdh0];
+
     // Construct a virtio header first.
     p.fragments = 1;
-    p.fragment_length[0] = sizeof(p.completion_info.intel82599.hdr);
-    p.packet_length      = sizeof(p.completion_info.intel82599.hdr);
-    p.fragment[0]        = (uint8_t *)&p.completion_info.intel82599.hdr;
+    p.fragment_length[0] = sizeof(last_info.hdr);
+    p.packet_length      = sizeof(last_info.hdr);
+    p.fragment[0]        = (uint8_t *)&last_info.hdr;
 
-    memset(&p.completion_info.intel82599.hdr, 0,
-	   sizeof(p.completion_info.intel82599.hdr));
+    memset(p.fragment[0], 0, sizeof(last_info.hdr));
     // XXX Fill out header with checksum info
     // When IPCS or L4CS is set, check IPE or TCPE in Error field
 

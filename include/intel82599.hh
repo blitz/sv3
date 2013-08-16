@@ -117,6 +117,9 @@ namespace Switch {
     struct {
       rx_buffer *buffer;
 
+      // We need space to construct a header. Here is as good as any.
+      virtio_net_hdr_mrg_rxbuf hdr;
+
       // 82599's buffer chaining for LRO is weird. We need to remember
       // where our buffer chain started.
 

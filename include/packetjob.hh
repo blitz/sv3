@@ -43,7 +43,6 @@ namespace Switch {
 	  unsigned index;
 	} virtio;
 	struct {
-	  struct virtio_net_hdr_mrg_rxbuf hdr;
 	  // Queue index of last buffer in buffer chain.
 	  uint16_t rx_idx;
 	} intel82599;
