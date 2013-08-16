@@ -30,6 +30,9 @@ namespace Switch {
     uint32_t packet_length;	// Length of packet in bytes
     uint8_t  fragments;		// Number of fragments
 
+    // How many times has this been copied?
+    uint8_t  copied;
+
     // Port-private data. Set in src_port->poll() and read in
     // src_port->mark_done(), effectively implementing a poor man's
     // closure.
@@ -47,6 +50,14 @@ namespace Switch {
       };
     } completion_info;
 
+    // Return a copy of the completion info and remember that we did
+    // so to avoid completing this packet to early.
+    CompletionInfo copy_completion_info()
+    {
+      copied += 1;
+      return completion_info;
+    }
+
     Ethernet::Header const &ethernet_header() const
     {
       assert(fragments > 1);
@@ -59,7 +70,7 @@ namespace Switch {
     void copy_from(Packet const &src, virtio_net_hdr const *hdr);
 
     Packet(Port *src_port)
-      : packet_length(0), fragments(0)
+      : packet_length(0), fragments(0), copied(0)
     { completion_info.src_port = src_port; }
   };
 

@@ -62,44 +62,15 @@ protected:
 
 #define RELAX() asm volatile ("pause");
 
-/// Call a method when the current scope is exitted.
-/// XXX Use a closure here, but check whether this generates the same
-/// code.
-template<typename CLASS, typename RETURN, typename... Arguments>
+
+template<typename T>
 class Finally {
-  template<int ...>
-  struct seq {};
 
-  template<int N, int ...S>
-  struct gens : gens<N-1, N-1, S...> {};
-
-  template<int ...S>
-  struct gens<0, S...>{ typedef seq<S...> type; };
-
-  template <int ...S>
-  RETURN call(seq<S...>)
-  {
-    (_instance->*_method)(std::get<S>(_arguments) ...);
-  }
-
-  typedef RETURN (CLASS::*method_ptr)(Arguments...);
-
-  CLASS                   *_instance;
-  method_ptr               _method;
-  std::tuple<Arguments...> _arguments;
+  T &_closure;
 
 public:
-
-
-  Finally(CLASS *instance, method_ptr method, Arguments... param)
-    : _instance(instance), _method(method),
-      _arguments(param...)
-  { }
-
-  ~Finally() {
-    call(typename gens<sizeof...(Arguments)>::type());
-  }
-
+  Finally(T &closure) : _closure(closure) {}
+  ~Finally() { _closure(); }
 };
 
 std::vector<std::string> string_split(std::string const &str, char delimiter);
