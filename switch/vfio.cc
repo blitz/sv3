@@ -81,16 +81,21 @@ namespace Switch {
     ioctl(_device, VFIO_DEVICE_GET_INFO, &device_info);
 
     for (unsigned i = 0; i < device_info.num_regions; i++) {
-      struct vfio_region_info reg = { .argsz = sizeof(reg),
-				      .index = i};
+      struct vfio_region_info reg = { .argsz = sizeof(reg) };
+
+      // XXX http://gcc.gnu.org/bugzilla/show_bug.cgi?id=55606
+      reg.index = i;
 
       ioctl(_device, VFIO_DEVICE_GET_REGION_INFO, &reg);
       _region_info.push_back(reg);
     }
 
     for (unsigned i = 0; i < device_info.num_irqs; i++) {
-      struct vfio_irq_info irq = { .argsz = sizeof(irq),
-				   .index = i};
+      struct vfio_irq_info irq = { .argsz = sizeof(irq) };
+
+      // XXX http://gcc.gnu.org/bugzilla/show_bug.cgi?id=55606
+      irq.index = i;
+
       ioctl(_device, VFIO_DEVICE_GET_IRQ_INFO, &irq);
       _irq_info.push_back(irq);
     }

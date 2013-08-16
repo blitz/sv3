@@ -28,6 +28,8 @@ make
 
 * Usage
 
+** Starting a Guest
+
   Start the switch and attach a guest using:
 
 #+BEGIN_SRC sh
@@ -40,3 +42,30 @@ qemu-system-x86_64 -mem-path /tmp -net none -device externalpci,socket=/tmp/sv3 
   Adding =-mem-path /tmp= to qemu is important, because it will create files there that
   serve as backing store for RAM.  */tmp should be a tmpfs!* If this is not the case,
   guest RAM will be periodically written to disk.
+
+** Creating an Upstream Port
+
+   By default, the switch is not connected to the outside world. You
+   need an upstream port to do this. sv3 is able to drive network
+   cards itself, but needs some preparation.
+
+   If the PCI ID of the desired network card is 0000:02:00.1 and the
+   user that runs the switch is john, use vfio-rebind.sh like this:
+
+#+BEGIN_SRC sh
+sudo ./scripts/vfio-rebind.sh 0000:02:00.1 john
+#+END_SRC
+
+   This will unload the device's driver and attach it to vfio with
+   access rights for john. The script might tell you to rebind unrelated devices
+   as well to make the IOMMU happy.
+
+   Currently, sv3 supports Intel 82599 10G "Niantic" NICs (sold as
+   x520).
+
+* Known Bugs
+
+ - The switch will segfault, if passed file descriptors point to files that are too short.
+ - The switch sometimes segfaults when clients disappear unexpectedly.
+
+   #  L4 checksums are wrong in the presence of option headers. But this code is not used right now.

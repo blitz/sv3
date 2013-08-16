@@ -56,12 +56,20 @@ namespace Switch {
 	// logf("Polling port '%s' returned %u byte packet.", src_port->name().c_str(),
 	//      p.packet_length);
 
+	// Mark the packet as done when we leave this scope. We make
+	// sure to call this even if one of the receive() methods
+	// throws an exception.
+	Finally<Port, void, Packet &> when_done(src_port, &Port::mark_done, p);
+
 	auto &ehdr = p.ethernet_header();
 	// logf("Destination %s", ehdr.dst.to_str());
 	// logf("Source      %s", ehdr.src.to_str());
 
 	Port *dst_port = LIKELY(not ehdr.dst.is_multicast()) ? mac_cache[ehdr.dst] : nullptr;
-	assert(dst_port != src_port);
+	if (UNLIKELY(dst_port == src_port)) {
+	  logf("Destination port is same as source port?");
+	  continue;
+	}
 
 	if (LIKELY(not ehdr.src.is_multicast())) {
 	  if (UNLIKELY(mac_cache[ehdr.src] != src_port))
@@ -72,10 +80,6 @@ namespace Switch {
 	  mac_cache.add(ehdr.src, src_port);
 	}
 
-	// Mark the packet as done when we leave this scope. We make
-	// sure to call this even if one of the receive() methods
-	// throws an exception.
-	Finally<Port, void, Packet &> when_done(src_port, &Port::mark_done, p);
 
 	if (LIKELY(dst_port)) {
 	  dst_port->receive(p);

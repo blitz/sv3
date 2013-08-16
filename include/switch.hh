@@ -57,8 +57,9 @@ namespace Switch {
     /// switch doesn't need to access packet data anymore.
     virtual void mark_done(Packet &p) = 0;
 
-    /// Check whether interrupts are pending and deliver them.
-    virtual void poll_irq() = 0;
+    /// Check whether interrupts are pending and deliver them. Default
+    /// method is empty.
+    virtual void poll_irq() { };
 
     /// Call this after the instance is completely constructed and
     /// ready to receive packets.

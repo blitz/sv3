@@ -19,6 +19,8 @@
 
 namespace Switch {
 
+  // Constants
+
 #define I99_REG(name, val) name = (val)/4
 
   enum {
@@ -70,7 +72,10 @@ namespace Switch {
   };
 #undef I99_REG
 
-
+  enum {
+    MSIX_RXTX_VECTOR = 0,
+    MSIX_MISC_VECTOR = 1,
+  };
 
   enum {
     CTRL_MASTER_DISABLE   = 1U << 2,
@@ -104,23 +109,26 @@ namespace Switch {
     SRRCTL_DESCTYPE_MASK  = (7 << 25),
     SRRCTL_DESCTYPE_ADV1B = (1 << 25),
     SRRCTL_DROP_EN        = (1 << 28),
+    SRRCTL_BSIZEPACKET_MASK  = 0x1F,
+    SRRCTL_BSIZEPACKET_SHIFT = 0,
 
     RSCCTL_MAXDESC_MASK   = (3 << 2),
     RSCCTL_MAXDESC_16     = (3 << 2),
+    RSCCTL_MAXDESC_8      = (2 << 2),
     RSCCTL_RSCEN          = (1 << 0),
 
-    LINKS_LINK_UP = (1 << 30),
+    LINKS_LINK_UP          = (1 << 30),
     LINKS_LINK_SPEED_SHIFT = 28,
     LINKS_LINK_SPEED_MASK  = 3,
 
-  };
-
-  enum {
-    MSIX_RXTX_VECTOR = 0,
-    MSIX_MISC_VECTOR = 1,
-
-    QUEUE_LEN        = 4096,	// 8K is the highest we can use here
-				// according to the manual.
+    RXDESC_LO_DD          = (1ULL << 0),
+    RXDESC_LO_EOP         = (1ULL << 1),
+    RXDESC_LO_NEXTP_SHIFT = 4,
+    RXDESC_LO_NEXTP_MASK  = 0xFFFFULL << RXDESC_LO_NEXTP_SHIFT,
+    RXDESC_LO_PKT_LEN_SHIFT = 32,
+    RXDESC_LO_PKT_LEN_MASK  = 0xFFFFULL << RXDESC_LO_PKT_LEN_SHIFT,
+    RXDESC_HI_RSCCNT_SHIFT  = 17,
+    RXDESC_HI_RSCCNT_MASK   = 0xFULL << RXDESC_HI_RSCCNT_SHIFT,
   };
 
   void pointer_store(void *p,
@@ -208,9 +216,14 @@ namespace Switch {
     _reg[RDT0] = _reg[RDH0] = 0;
     _reg[RDRXCTL] |= RDRXCTL_CRC_STRIP;
 
-    _reg[SRRCTL0] = (_reg[SRRCTL0] & ~SRRCTL_DESCTYPE_MASK) | SRRCTL_DESCTYPE_ADV1B | SRRCTL_DROP_EN;
-    /* MAXDESC * SRRCTL.BSIZEPACKET (2K right now) must be smaller than (2^16 - 1)! */
-    _reg[RSCCTL0] = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_16 | RSCCTL_RSCEN;
+    static_assert(RX_BUFFER_SIZE % 1024 == 0, "RX buffer size must be multiple of 1024");
+    /* MAXDESC * SRRCTL.BSIZEPACKET must be smaller than (2^16 - 1)! */
+    static_assert(8 * RX_BUFFER_SIZE < 65535, "Invalid RX buffer configuration");
+
+    uint32_t srrctl = (_reg[SRRCTL0] & ~(SRRCTL_DESCTYPE_MASK | SRRCTL_BSIZEPACKET_MASK));
+    _reg[SRRCTL0] = srrctl | SRRCTL_DESCTYPE_ADV1B | SRRCTL_DROP_EN
+      | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT);
+    _reg[RSCCTL0] = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | RSCCTL_RSCEN;
 
     /* XXX Verify that RSC is working. Manual claims that hardware
        only merges packets with no TCP options. Linux always adds
@@ -237,6 +250,7 @@ namespace Switch {
 
 
     // Enable IRQs.
+    _reg[EICR] = ~0U;
     _reg[EIMS] = ~0U;
 
     // XXX TODO Enable DCA for descriptor writeback and packet headers.
@@ -247,6 +261,13 @@ namespace Switch {
     // Clear interrupt cause register and IRQ mask bits.
     _reg[EICR] = ~0xFFFF;
     _reg[EIMS] = ~0xFFFF;
+  }
+
+  void Intel82599::unmask_rxtx_irq()
+  {
+    // Clear interrupt cause register and IRQ mask bits.
+    _reg[EICR] = 1;
+    _reg[EIMS] = 1;
   }
 
   Intel82599::Intel82599(VfioGroup group, int fd, int rxtx_eventfd)
@@ -266,23 +287,129 @@ namespace Switch {
 
   void Intel82599Port::receive(Packet &p)
   {
+    logf("Send a packet. DROP.");
     // XXX
+  }
+
+  void deadfill(uint8_t *p)
+  {
+    unsigned l = 4096/4;
+    asm volatile ( "rep stosl" : "+D" (p), "+c" (l) : "a" (0) : "memory");
   }
 
   bool Intel82599Port::poll(Packet &p, bool enable_notifications)
   {
-    // XXX
+    if (UNLIKELY(enable_notifications)) {
+      unmask_rxtx_irq();
+    }
+
+    desc &rx  = _rx_desc[_shadow_rdh0];
+
+    // Consume buffers and remember our knowledge about buffer chains
+    // in _rx_buffers until we either run out of descriptors with DD
+    // set or we found a complete packet (EOP set).
+
+    while ((_shadow_rdh0 != _shadow_rdt0) and
+	   __atomic_load_n(&rx.lo, __ATOMIC_ACQUIRE) & RXDESC_LO_DD) {
+
+      if (rx.lo & RXDESC_LO_EOP)
+	goto packet_eop;
+
+      unsigned rsccnt = (rx.hi & RXDESC_HI_RSCCNT_MASK) >> RXDESC_HI_RSCCNT_SHIFT;
+      unsigned nextp  = (rsccnt == 0) ?
+	advance_qp(_shadow_rdt0) : ((rx.lo & RXDESC_LO_NEXTP_MASK) >> RXDESC_LO_NEXTP_SHIFT);
+
+      _rx_buffers[nextp].not_first  = true;
+      _rx_buffers[nextp].rsc_last   = _shadow_rdt0;
+      _rx_buffers[nextp].rsc_number = _rx_buffers[_shadow_rdh0].rsc_number + 1;
+
+      _shadow_rdh0 = advance_qp(_shadow_rdh0);
+    }
+
     return false;
+
+  packet_eop:
+    // Received a complete packet. Backtrace our steps and build a
+    // fragment list.
+
+    // Construct a virtio header first.
+    p.fragments = 1;
+    p.fragment_length[0] = sizeof(p.intel82599.hdr);
+    p.packet_length      = sizeof(p.intel82599.hdr);
+    p.fragment[0]        = (uint8_t *)&p.intel82599.hdr;
+
+    memset(&p.intel82599.hdr, 0, sizeof(p.intel82599.hdr));
+    // XXX Fill out header with checksum info
+    // When IPCS or L4CS is set, check IPE or TCPE in Error field
+
+    unsigned fragments = 1 + _rx_buffers[_shadow_rdh0].rsc_number;
+    p.fragments        = 1 + fragments;
+    logf("RX %2u fragments", p.fragments);
+
+    assert(p.fragments < Packet::MAX_FRAGMENTS);
+
+    // Fill fragment list backwards.
+    unsigned cur_idx    = _shadow_rdh0;
+    p.intel82599.rx_idx = cur_idx;
+
+    for (unsigned cur_frag = fragments; cur_frag > 0; cur_frag--) {
+      auto &info = _rx_buffers[cur_idx];
+      auto &desc = _rx_desc[cur_idx];
+
+      unsigned flen = (desc.lo & RXDESC_LO_PKT_LEN_MASK) >> RXDESC_LO_PKT_LEN_SHIFT;
+
+      p.packet_length            += flen;
+      p.fragment_length[cur_frag] = flen;
+      p.fragment[cur_frag]        = info.buffer->data;
+
+      logf("Fragment %02u: %p+%x idx %u", cur_frag, info.buffer->data, flen, cur_idx);
+      logf("           : not_first %u", info.not_first);
+
+      // First fragment has not_first == false.
+      assert(cur_frag != 0 or not info.not_first);
+    }
+
+    logf("Packet %u bytes.", unsigned(p.packet_length));
+
+    // XXX Debugging foo
+    Ethernet::Header *hdr = (Ethernet::Header *)p.fragment[1];
+    if (hdr->src == hdr->dst) {
+      logf(std::string("\n") + hexdump(p.fragment[1], p.fragment_length[0]));
+      assert(false);
+    }
+
+    _shadow_rdh0 = advance_qp(_shadow_rdh0);
+    return true;
   }
 
   void Intel82599Port::mark_done(Packet &p)
   {
-    // XXX
-  }
+    unsigned not_first;
+    unsigned idx = p.intel82599.rx_idx;
+    do {
+      unsigned   next_idx = _rx_buffers[idx].rsc_last;
+      rx_buffer *buf      = _rx_buffers[idx].buffer;
 
-  void Intel82599Port::poll_irq()
-  {
-    // Nothing to do
+      not_first = _rx_buffers[idx].not_first;
+
+      logf("Marking buffer idx %u %p done. not_first %u", idx, buf->data, not_first);
+      deadfill(buf->data);
+
+      memset(&_rx_buffers[idx],          0, sizeof(_rx_buffers[0]));
+
+      logf("Enqueue idx %u.", _shadow_rdt0);
+      // Not necessary, but let's be on the careful side of things.
+      memset(&_rx_buffers[_shadow_rdt0], 0, sizeof(_rx_buffers[0]));
+
+      _rx_buffers[_shadow_rdt0].buffer = buf;
+      _rx_desc[_shadow_rdt0] = populate_rx_desc(buf->data);
+
+      _shadow_rdt0 = advance_qp(_shadow_rdt0);
+
+      idx = next_idx;
+    } while (not_first);
+
+    __atomic_store_n(&_reg[RDT0], _shadow_rdt0, __ATOMIC_RELEASE);
   }
 
   void Intel82599Port::misc_thread_fn()
@@ -300,14 +427,44 @@ namespace Switch {
     logf("IRQ thread exits.");
   }
 
+  Intel82599::desc Intel82599Port::populate_rx_desc(uint8_t *data)
+  {
+    desc r;
+    r.hi = (uintptr_t)data;
+    r.lo = 0;
+    return r;
+  }
+
   Intel82599Port::Intel82599Port(VfioGroup group, int fd,
                                  Switch &sw, std::string name)
     : Intel82599(group, fd, sw.event_fd()),
       Port(sw, name),
-      _misc_thread(&Intel82599Port::misc_thread_fn, this)
+      _misc_thread(&Intel82599Port::misc_thread_fn, this),
+      _shadow_rdt0(0), _shadow_rdh0(0),
+      _shadow_tdt0(0), _shadow_tdh0(0)
   {
+    logf("Resetting device.");
     reset();
 
+    memset(_rx_buffers, 0, sizeof(_rx_buffers));
+
+    logf("Queueing RX buffers.");
+    // Create initial set of buffers and enqueue them.
+    for (unsigned i = 0; i < RX_BUFFERS; i++) {
+      rx_buffer *r = alloc_dma_mem<rx_buffer>();
+      static_assert(sizeof(r->data) == 4096, "We only support page sized buffers here");
+
+      deadfill(r->data);
+
+      // Enqueue buffer
+      _rx_buffers[_shadow_rdt0].buffer = r;
+      _rx_desc[_shadow_rdt0] = populate_rx_desc(r->data);
+
+      __atomic_store_n(&_reg[RDT0], _shadow_rdt0 = advance_qp(_shadow_rdt0), __ATOMIC_RELEASE);
+
+    }
+
+    enable();
   }
 
 }

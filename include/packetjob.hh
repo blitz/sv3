@@ -22,7 +22,7 @@ namespace Switch {
   class Port;
 
   struct Packet {
-    constexpr static unsigned MAX_FRAGMENTS = 256;
+    constexpr static unsigned MAX_FRAGMENTS = 32;
 
     uint8_t  *fragment[MAX_FRAGMENTS];
     uint16_t  fragment_length[MAX_FRAGMENTS];
@@ -38,6 +38,12 @@ namespace Switch {
       struct {
 	unsigned index;
       } virtio;
+      struct {
+	struct virtio_net_hdr_mrg_rxbuf hdr;
+
+	// Queue index of last buffer in buffer chain.
+	uint16_t rx_idx;
+      } intel82599;
     };
 
     Ethernet::Header const &ethernet_header() const

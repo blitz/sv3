@@ -37,6 +37,8 @@ namespace Switch {
 
   class Intel82599 : public VfioDevice {
 
+  protected:
+
     uint32_t volatile *_reg;
 
     struct desc { uint64_t hi; uint64_t lo; };
@@ -62,16 +64,23 @@ namespace Switch {
       T *p;
       size_t alloc_size = (size + 0xFFF) & ~0xFFF;
       if (0 != posix_memalign((void **)&p, 0x1000, alloc_size))
-	throw "Allocation failure";
+	throw Exception("posix_memalign failed");
       memset(p, 0, alloc_size);
       map_memory_to_device(p, alloc_size, true, true);
       return p;
     }
 
+    enum {
+      RX_BUFFER_SIZE   = 4096,
+      QUEUE_LEN        = 4096,	// 8K is the highest we can use here
+				// according to the manual.
+    };
+
   public:
 
     int         misc_event_fd() const { return _misc_eventfd; }
     int         rxtx_event_fd() const { return _rxtx_eventfd; }
+    void        unmask_rxtx_irq();
     void        unmask_misc_irq();
     std::string status();
     void        reset();
@@ -82,16 +91,62 @@ namespace Switch {
   class Intel82599Port : public Intel82599,
 			 public Port
   {
+    // Configuration
+
+    enum {
+      RX_BUFFER_MEMORY = 7 << 20,
+      RX_BUFFERS       = RX_BUFFER_MEMORY / RX_BUFFER_SIZE,
+
+    };
+
+    static_assert(unsigned(RX_BUFFERS) < unsigned(QUEUE_LEN), "Too many RX buffers");
+
+    struct rx_buffer {
+      uint8_t data[RX_BUFFER_SIZE];
+    };
+
     std::thread _misc_thread;
 
+    uint16_t    _shadow_rdt0;
+    uint16_t    _shadow_rdh0;
+
+    uint16_t    _shadow_tdt0;
+    uint16_t    _shadow_tdh0;
+
+    // Remembers which buffer we stored in an RX queue entry.
+    struct {
+      rx_buffer *buffer;
+
+      // 82599's buffer chaining for LRO is weird. We need to remember
+      // where our buffer chain started.
+
+      // False if this is the first packet in a chain. This is stored
+      // as a complemented value to be able to easily initialize
+      // everything with zero.
+      bool       not_first;
+
+      // Index of previous buffer.
+      uint16_t   rsc_last;
+
+      // How many buffers do we have until now not including this?
+      uint16_t   rsc_number;
+    } _rx_buffers[QUEUE_LEN];
+
+    uint16_t advance_qp(uint16_t idx) {
+      assert(idx < QUEUE_LEN);
+      idx += 1;
+      if (idx == QUEUE_LEN) idx = 0;
+      return idx;
+    }
+
     void misc_thread_fn();
+    desc populate_rx_desc(uint8_t *data);
 
   public:
 
     void receive(Packet &p) override;
     bool poll(Packet &p, bool enable_notifications) override;
     void mark_done(Packet &p) override;
-    void poll_irq() override;
 
     Intel82599Port(VfioGroup group, int fd,
 		   Switch &sw, std::string name);
