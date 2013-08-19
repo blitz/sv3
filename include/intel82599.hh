@@ -135,6 +135,14 @@ namespace Switch {
       uint16_t   rsc_number;
     } _rx_buffers[QUEUE_LEN];
 
+    // Information for cleaning TX buffers
+    struct {
+      bool need_completion;
+
+      // Only valid if need_completion is true;
+      Packet::CompletionInfo info;
+    } _tx_buffers[QUEUE_LEN];
+
     uint16_t advance_qp(uint16_t idx) {
       assert(idx < QUEUE_LEN);
       idx += 1;
@@ -144,6 +152,7 @@ namespace Switch {
 
     void misc_thread_fn();
     desc populate_rx_desc(uint8_t *data);
+    desc populate_tx_desc(uint8_t *data, uint16_t len, bool eop);
 
   public:
 

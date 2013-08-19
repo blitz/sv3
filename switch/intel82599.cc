@@ -66,8 +66,14 @@ namespace Switch {
     I99_REG(TDBWAL0,  0x6038),
     I99_REG(TDBWAH0,  0x603C),
     I99_REG(TXDCTL0,  0x6028),
+    I99_REG(DMATXCTL, 0x4A80),
 
     I99_REG(HLREG0,   0x4240),
+
+    I99_REG(TPT,      0x40D4),
+    I99_REG(TPR,      0x40D0),
+    I99_REG(QBTCL0,   0x8700),
+    I99_REG(QBTCH0,   0x8704),
 
   };
 #undef I99_REG
@@ -106,6 +112,8 @@ namespace Switch {
 
     TXDCTL_EN             = 1U << 25,
 
+    DMATXCTL_TE           = 1U,
+
     SRRCTL_DESCTYPE_MASK  = (7 << 25),
     SRRCTL_DESCTYPE_ADV1B = (1 << 25),
     SRRCTL_DROP_EN        = (1 << 28),
@@ -129,6 +137,12 @@ namespace Switch {
     RXDESC_LO_PKT_LEN_MASK  = 0xFFFFULL << RXDESC_LO_PKT_LEN_SHIFT,
     RXDESC_HI_RSCCNT_SHIFT  = 17,
     RXDESC_HI_RSCCNT_MASK   = 0xFULL << RXDESC_HI_RSCCNT_SHIFT,
+
+    TXDESC_LO_DTYP_ADV    = (3ULL << 20),
+    TXDESC_LO_DCMD_DEXT   = (1ULL << (5 + 24)),
+    TXDESC_LO_DCMD_RS     = (1ULL << (3 + 24)),
+    TXDESC_LO_DCMD_IFCS   = (1ULL << (1 + 24)),
+    TXDESC_LO_DCMD_EOP    = (1ULL << (0 + 24)),
   };
 
   void pointer_store(void *p,
@@ -225,29 +239,29 @@ namespace Switch {
       | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT);
     _reg[RSCCTL0] = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | RSCCTL_RSCEN;
 
-    /* XXX Verify that RSC is working. Manual claims that hardware
-       only merges packets with no TCP options. Linux always adds
-       timestamp option. Later it says timestamp options are okay. */
-
     _reg[RXDCTL0] |= RXDCTL_EN;
     _reg[RXCTRL]  |= RXCTRL_RXEN;
     _reg[FCTRL]   |= FCTRL_UPE | FCTRL_MPE | FCTRL_BAM;
 
     /* Transmit */
+    _reg[DMATXCTL] |= DMATXCTL_TE;
+    _reg[TXDCTL0]  &= ~TXDCTL_EN;
+
     _tx_desc       = alloc_dma_mem<desc>(sizeof(desc[QUEUE_LEN]));
-    pointer_store(_rx_desc,      _reg[TDBAL0], _reg[TDBAH0]);
+    pointer_store(_tx_desc,  _reg[TDBAL0], _reg[TDBAH0]);
     _reg[TDLEN0]   = QUEUE_LEN * sizeof(desc);
-    _reg[TDT0] = _reg[TDH0] = 0;
+    _reg[TDT0]     = _reg[TDH0] = 0;
 
     _tx_writeback  = alloc_dma_mem<uint32_t>();
-    pointer_store((void *)_tx_writeback, _reg[TDBWAL0], _reg[TDBWAH0]);
-    _reg[TDBWAL0] |= TDBWAL_HEAD_WB_EN;
+     pointer_store((void *)_tx_writeback, _reg[TDBWAL0], _reg[TDBWAH0]);
+     _reg[TDBWAL0] |= TDBWAL_HEAD_WB_EN;
 
-    _reg[TXDCTL0] |= TXDCTL_EN;
+     _reg[TXDCTL0]  |= TXDCTL_EN | (1 << 8) | 32;
+
+     poll_for(1000, [&] { return (_reg[TXDCTL0] & TXDCTL_EN) != 0; });
 
     set_irq_eventfd(VFIO_PCI_MSIX_IRQ_INDEX, MSIX_MISC_VECTOR, _misc_eventfd);
     set_irq_eventfd(VFIO_PCI_MSIX_IRQ_INDEX, MSIX_RXTX_VECTOR, _rxtx_eventfd);
-
 
     // Enable IRQs.
     _reg[EICR] = ~0U;
@@ -287,8 +301,37 @@ namespace Switch {
 
   void Intel82599Port::receive(Packet &p)
   {
-    logf("Send a packet. DROP.");
-    // XXX
+    logf("TX %u %u:%u TPT %u %016llx %016llx", *_tx_writeback, _reg[TDH0], _reg[TDT0], _reg[TPT], _tx_desc[0].hi, _tx_desc[0].lo);
+
+    logf("TX %u fragment(s). XXX Ignoring virtio header!", p.fragments);
+    
+    unsigned shadow_tdt = _shadow_tdt0;
+    unsigned last_tdt   = shadow_tdt;
+
+    for (unsigned i = 1; i < p.fragments; i++) {
+      last_tdt = shadow_tdt;
+
+      _tx_buffers[shadow_tdt].need_completion = false;
+
+      // XXX Use non-temporal moves and sfence before TDT store.
+      _tx_desc[shadow_tdt] = populate_tx_desc(p.fragment[i], p.fragment_length[i],
+       					      i+1 == p.fragments);
+
+      shadow_tdt = advance_qp(shadow_tdt);
+      if (UNLIKELY(_shadow_tdh0 == shadow_tdt))
+	goto fail;
+    }
+
+    _tx_buffers[last_tdt].need_completion = true;
+    _tx_buffers[last_tdt].info = p.copy_completion_info();
+
+    _shadow_tdt0 = shadow_tdt;
+    __atomic_store_n(&_reg[TDT0], shadow_tdt, __ATOMIC_RELEASE);
+
+    return;
+
+  fail:
+    logf("TX queue full!");
   }
 
   void deadfill(uint8_t *p)
@@ -302,6 +345,22 @@ namespace Switch {
     if (UNLIKELY(enable_notifications)) {
       unmask_rxtx_irq();
     }
+
+    // XXX As long as we don't use DCA, we can prefetch _tx_writeback
+    // here and only access it after we look for received packets.
+    unsigned tx_wb = __atomic_load_n(_tx_writeback, __ATOMIC_RELAXED);
+    while (tx_wb != _shadow_tdh0) {
+      auto &info = _tx_buffers[_shadow_tdh0];
+      logf("Completed TX index %u. Needed callback: %u.", _shadow_tdh0, info.need_completion);
+      sleep(1);
+      // Complete TX packets. This is rather easy because we don't
+      // need to look at the descriptors.
+      if (info.need_completion)
+	info.info.src_port->mark_done(info.info);
+
+      _shadow_tdh0 = advance_qp(_shadow_tdh0);
+    }
+
 
     desc &rx  = _rx_desc[_shadow_rdh0];
 
@@ -346,7 +405,7 @@ namespace Switch {
 
     unsigned fragments = 1 + _rx_buffers[_shadow_rdh0].rsc_number;
     p.fragments        = 1 + fragments;
-    logf("RX %2u fragments", p.fragments);
+    //logf("RX %2u fragments", p.fragments);
 
     assert(p.fragments < Packet::MAX_FRAGMENTS);
 
@@ -364,8 +423,7 @@ namespace Switch {
       p.fragment_length[cur_frag] = flen;
       p.fragment[cur_frag]        = info.buffer->data;
 
-      logf("Fragment %02u: %p+%x idx %u", cur_frag, info.buffer->data, flen, cur_idx);
-      logf("           : not_first %u", info.not_first);
+      //logf("Fragment %02u: %p+%x idx %u", cur_frag, info.buffer->data, flen, cur_idx);
 
       // First fragment has not_first == false.
       assert(cur_frag != 0 or not info.not_first);
@@ -394,12 +452,10 @@ namespace Switch {
 
       not_first = _rx_buffers[idx].not_first;
 
-      logf("Marking buffer idx %u %p done. not_first %u", idx, buf->data, not_first);
-      deadfill(buf->data);
+      //logf("Marking buffer idx %u %p done. not_first %u", idx, buf->data, not_first);
 
       memset(&_rx_buffers[idx],          0, sizeof(_rx_buffers[0]));
 
-      logf("Enqueue idx %u.", _shadow_rdt0);
       // Not necessary, but let's be on the careful side of things.
       memset(&_rx_buffers[_shadow_rdt0], 0, sizeof(_rx_buffers[0]));
 
@@ -437,6 +493,19 @@ namespace Switch {
     return r;
   }
 
+  Intel82599::desc Intel82599Port::populate_tx_desc(uint8_t *data, uint16_t len, bool eop)
+  {
+    desc r;
+
+    logf("TX -> %p+%u EOP:%u", data, len, eop);
+
+    r.hi = (uintptr_t)data;
+    r.lo = len | TXDESC_LO_DTYP_ADV | TXDESC_LO_DCMD_DEXT
+      | TXDESC_LO_DCMD_IFCS
+      | (eop ? (TXDESC_LO_DCMD_EOP | TXDESC_LO_DCMD_RS) : 0);
+    return r;
+  }
+
   Intel82599Port::Intel82599Port(VfioGroup group, int fd,
                                  Switch &sw, std::string name)
     : Intel82599(group, fd, sw.event_fd()),
@@ -449,14 +518,13 @@ namespace Switch {
     reset();
 
     memset(_rx_buffers, 0, sizeof(_rx_buffers));
+    memset(_tx_buffers, 0, sizeof(_tx_buffers));
 
     logf("Queueing RX buffers.");
     // Create initial set of buffers and enqueue them.
     for (unsigned i = 0; i < RX_BUFFERS; i++) {
       rx_buffer *r = alloc_dma_mem<rx_buffer>();
       static_assert(sizeof(r->data) == 4096, "We only support page sized buffers here");
-
-      deadfill(r->data);
 
       // Enqueue buffer
       _rx_buffers[_shadow_rdt0].buffer = r;

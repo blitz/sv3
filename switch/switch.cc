@@ -73,10 +73,10 @@ namespace Switch {
 	}
 
 	if (LIKELY(not ehdr.src.is_multicast())) {
-	  if (UNLIKELY(mac_cache[ehdr.src] != src_port))
-	    logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
-		 Ethernet::hash(ehdr.src),
-		 src_port->name().c_str());
+	  // if (UNLIKELY(mac_cache[ehdr.src] != src_port))
+	  //   logf("MAC %s (%08x) owned by port '%s'.", ehdr.src.to_str(),
+	  // 	 Ethernet::hash(ehdr.src),
+	  // 	 src_port->name().c_str());
 
 	  mac_cache.add(ehdr.src, src_port);
 	}
