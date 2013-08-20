@@ -100,6 +100,9 @@ namespace Switch {
     /// Check for a message. Shouldn't block.
     bool poll();
 
+    /// Insert a region into the region list.
+    bool insert_region(Region const &r);
+
     bool handle_request(externalpci_req const &req,
 			externalpci_res &res);
 
@@ -120,7 +123,7 @@ namespace Switch {
       _device(*this)
     { }
 
-    ~Session();
+    virtual ~Session();
   };
 
 }

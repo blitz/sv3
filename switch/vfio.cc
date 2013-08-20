@@ -67,8 +67,12 @@ namespace Switch {
     dma_map.iova  = (uintptr_t)m;
     dma_map.size  = len;
 
-    if (0 != ioctl(_container, VFIO_IOMMU_MAP_DMA, &dma_map))
+    if (0 != ioctl(_container, VFIO_IOMMU_MAP_DMA, &dma_map)) {
+      if (errno == EFAULT)
+	fprintf(stderr, "We tried to create an 1:1 DMA mapping and failed, because the address is beyond\n"
+		"the addressing capabilities of the IOMMU. We need to handle this, but we don't...\n");
       throw SystemError("Could not map DMA memory.");
+    }
   }
 
   // VfioDevice

@@ -18,6 +18,7 @@
 
 #include <list>
 #include <vector>
+#include <map>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -123,10 +124,28 @@ namespace Switch {
     // Modify the list of ports.
     void modify_ports(std::function<void(PortsList &)> f);
 
+    /// DMA region management
+
+    struct dma_region {
+      void   *addr;
+      size_t  len;
+    };
+
+    typedef std::function<void(void *, size_t)> dma_memory_callback;
+    dma_memory_callback                        _dma_cb;
+    std::map<Port *, std::vector<dma_region> > _dma_regions;
+
+      // Work loop.
+
 
     bool work_quantum(PortsList const &ports,
 		      SwitchHash      &mac_cache,
 		      bool             enabled_notifications);
+
+    /// Has the shutdown been initiated?
+    /// XXX Can we get by with mo_relaxed here?
+    bool should_shutdown()
+    { return _shutdown_called.load(std::memory_order_relaxed); }
 
   public:
 
@@ -142,18 +161,25 @@ namespace Switch {
     void attach_port(Port &p);
     void detach_port(Port &p);
 
-    // This function can be called from any thread or from signal
-    // context to shut the switch down. It will exit from its loop()
-    // method, if that is currently executing.
+    /// This function can be called from any thread or from signal
+    /// context to shut the switch down. It will exit from its loop()
+    /// method, if that is currently executing.
     void shutdown();
 
-    /// Has the shutdown been initiated?
-    /// XXX Can we get by with mo_relaxed here?
-    bool should_shutdown()
-    { return _shutdown_called.load(std::memory_order_relaxed); }
-
-    // Wake up the polling thread and have it poll all ports.
+    /// Wake up the polling thread and have it poll all ports.
     void schedule_poll();
+
+    /// Register a function that will be called for every new DMA-able
+    /// memory region, typically guest memory. During this function
+    /// call, the callback will be called for all current DMA-able
+    /// memory regions.
+    void register_dma_memory_callback(dma_memory_callback cb);
+
+    /// Announce new DMA-able memory region.
+    void announce_dma_memory(Port &port, void *p, size_t len);
+
+    /// Remove all DMA memory regions added by the given port.
+    void remove_dma_memory(Port &port);
 
     explicit Switch(unsigned poll_us, unsigned batch_size);
     ~Switch();

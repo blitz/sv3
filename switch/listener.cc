@@ -75,6 +75,16 @@ namespace Switch {
     return true;
   }
 
+  bool Session::insert_region(Region const &r)
+  {
+    _sw.logf("Inserting region %016" PRIx64 "+%08" PRIx64 " at %p.",
+	     r.addr, r.size, r.mapping);
+    bool s =  _regions.insert(r);
+    if (s) _sw.announce_dma_memory(_device, r.mapping, r.size);
+
+    return s;
+  }
+
   bool Session::handle_request(externalpci_req const &req,
 			       externalpci_res &res)
   {
@@ -100,9 +110,14 @@ namespace Switch {
       break;
     }
     case EXTERNALPCI_REQ_REGION: {
+      // We need this hint, because otherwise are pretty certain to
+      // get virtual addresses for which we cannot create 1:1 DMA
+      // mappings. Don't worry about races here, mmap takes care of
+      // that.
+      static uintptr_t address_hint = (1ULL << 32);
       Region r(req.region.phys_addr,
 	       req.region.size,
-	       reinterpret_cast<uint8_t *>(mmap(NULL, req.region.size,
+	       reinterpret_cast<uint8_t *>(mmap((void *)address_hint, req.region.size,
 						PROT_READ | PROT_WRITE,
 						MAP_SHARED,
 						req.region.fd,
@@ -112,9 +127,8 @@ namespace Switch {
 	_sw.logf("mmap failed.");
 	return false;
       }
-      _sw.logf("Inserting region %016" PRIx64 "+%08" PRIx64 " at %p.",
-	       r.addr, r.size, r.mapping);
-      return _regions.insert(r);
+      address_hint += req.region.size;
+      return insert_region(r);
     }
     case EXTERNALPCI_REQ_RESET: {
       _device.reset();

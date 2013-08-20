@@ -47,6 +47,7 @@ namespace Switch {
   Port::~Port()
   {
     disable();
+    _switch.remove_dma_memory(*this);
   }
 
 }

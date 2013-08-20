@@ -351,8 +351,9 @@ namespace Switch {
     unsigned tx_wb = __atomic_load_n(_tx_writeback, __ATOMIC_RELAXED);
     while (tx_wb != _shadow_tdh0) {
       auto &info = _tx_buffers[_shadow_tdh0];
-      logf("Completed TX index %u. Needed callback: %u.", _shadow_tdh0, info.need_completion);
-      sleep(1);
+      logf("%u %u:%u Completed TX index %u. Needed callback: %u.",
+	   tx_wb, _reg[TDH0], _reg[TDT0],
+	   _shadow_tdh0, info.need_completion);
       // Complete TX packets. This is rather easy because we don't
       // need to look at the descriptors.
       if (info.need_completion)
@@ -514,6 +515,12 @@ namespace Switch {
       _shadow_rdt0(0), _shadow_rdh0(0),
       _shadow_tdt0(0), _shadow_tdh0(0)
   {
+
+    _switch.register_dma_memory_callback([&] (void *p, size_t s) {
+	logf("Registering DMA memory: %p+%zx", p, s);
+	map_memory_to_device(p, s, true, true);
+      });
+
     logf("Resetting device.");
     reset();
 

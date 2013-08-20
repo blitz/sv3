@@ -40,6 +40,29 @@ namespace Switch {
     write(_event_fd, &val, sizeof(val));
   }
 
+  void Switch::announce_dma_memory(Port &port, void *p, size_t len)
+  {
+    dma_region r = {p, len};
+    _dma_regions[&port].push_back(r);
+    _dma_cb(p, len);
+  }
+
+  void Switch::register_dma_memory_callback(dma_memory_callback cb)
+  {
+    for (auto it : _dma_regions)
+      for (auto r : it.second)
+	cb(r.addr, r.len);
+
+    _dma_cb = cb;
+  }
+
+  void Switch::remove_dma_memory(Port &port)
+  {
+    auto it = _dma_regions.find(&port);
+    assert(it != _dma_regions.end());
+    _dma_regions.erase(it);
+  }
+
   /// Switch a couple of packets. Returns false if we were idle.
   bool Switch::work_quantum(PortsList const &ports,
 			    SwitchHash      &mac_cache,
@@ -270,7 +293,6 @@ namespace Switch {
 	  if (*it == &p) {
 	    ports.erase(it);
 	    size = ports.size();
-
 	    logf("Detaching port '%s'. %zu port%s left.",
 		 p.name().c_str(), size, size == 1 ? "" : "s");
 	    break;
@@ -291,6 +313,7 @@ namespace Switch {
       _ports_mtx()
   {
     _event_fd = eventfd(0, 0);
+    register_dma_memory_callback([&] (void *p, size_t s) { });
   }
 
   Switch::~Switch()

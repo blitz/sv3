@@ -23,6 +23,8 @@
 
 namespace Switch {
 
+  struct Region;
+
   enum {
     INVALID_DESC_ID = ~0U,
   };
