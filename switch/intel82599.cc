@@ -75,6 +75,13 @@ namespace Switch {
     I99_REG(QBTCL0,   0x8700),
     I99_REG(QBTCH0,   0x8704),
 
+    I99_REG(RTTDCS,   0x4900),
+
+    I99_REG(DCA_RXCTRL0, 0x100C),
+    I99_REG(DCA_TXCTRL0, 0x600C),
+
+    I99_REG(SECRXCTRL, 0x8D00),
+    I99_REG(SECRXSTAT, 0x8D04),
   };
 #undef I99_REG
 
@@ -89,6 +96,10 @@ namespace Switch {
     CTRL_RST              = 1U << 26, /* Device Reset */
 
     STATUS_MASTER_ENABLE  = 1U << 19,
+
+    CTRL_EXT_NS_DIS       = 1U << 16,
+    CTRL_EXT_RO_DIS       = 1U << 17,
+    CTRL_EXT_DRV_LOAD     = 1U << 28,
 
     GPIE_MULTIPLE_MSIX    = 1U << 4,
     GPIE_EIAME            = 1U << 30, /* Automask Enable */
@@ -128,6 +139,19 @@ namespace Switch {
     LINKS_LINK_UP          = (1 << 30),
     LINKS_LINK_SPEED_SHIFT = 28,
     LINKS_LINK_SPEED_MASK  = 3,
+
+    RTTDCS_ARBDIS         = (1U << 6),
+
+    DCA_RXCTRL_DESC_RRO_EN = (1U << 9),
+    DCA_RXCTRL_DATA_RRO_EN = (1U << 13),
+    DCA_RXCTRL_HEAD_RRO_EN = (1U << 15),
+
+    DCA_TXCTRL_DESC_RRO_EN = (1U << 9),
+    DCA_TXCTRL_WB_RRO_EN   = (1U << 11),
+    DCA_TXCTRL_DATA_RRO_EN = (1U << 13),
+
+    SECRXCTRL_SECRX_DIS   = (1U << 0),
+    SECRXSTAT_SECRX_RDY   = (1U << 0),
 
     RXDESC_LO_DD          = (1ULL << 0),
     RXDESC_LO_EOP         = (1ULL << 1),
@@ -181,6 +205,29 @@ namespace Switch {
        << speed[(links >> LINKS_LINK_SPEED_SHIFT) & LINKS_LINK_SPEED_MASK]
        << ".";
 
+    // if (links & (1U << 0)) ss << " KX_SIG_DET";
+    // if (links & (1U << 1)) ss << " FEC_SIG_DET";
+    // if (links & (1U << 2)) ss << " FEC_BLOCK_LOCK";
+    // if (links & (1U << 3)) ss << " KR_HI_BERR";
+    // if (links & (1U << 4)) ss << " KR_PCS_BLOCK_LOCK";
+    // if (links & (1U << 5)) ss << " KX_AN_NEXT";
+    // if (links & (1U << 6)) ss << " KX_AN_PAGE";
+    // if (links & (1U << 7)) ss << " STATUS_UP";
+    // ss << "\n";
+    // ss << "KX4_SIG_DET:" << std::hex << ((links >> 8) & 0xF);
+
+    // if (links & (1U << 12)) ss << " KR_SIG_DET";
+    // ss << "10G_LANE_SYNC:" << std::hex << ((links >> 13) & 0xF);
+    // if (links & (1U << 17)) ss << " 10G_ALIGN";
+    // if (links & (1U << 18)) ss << " 10G_SYNC";
+
+    // ss << "\n";
+    // ss << " LINKS " << std::hex << links;
+    // ss << " LINKS2 " << std::hex << _reg[0x4324/4];
+
+
+    // XXX Check sync, align, link up, speed
+
     return ss.str();
   }
 
@@ -218,12 +265,19 @@ namespace Switch {
     /* RX and TX IRQs of queue 0 map to IRQ MSIX_RXTX_VECTOR. */
     _reg[IVAR0] = (0x80 | MSIX_RXTX_VECTOR) |
       ((0x80 | MSIX_RXTX_VECTOR) << 8);
-    
+
+    set_irq_eventfd(VFIO_PCI_MSIX_IRQ_INDEX, MSIX_MISC_VECTOR, _misc_eventfd);
+    set_irq_eventfd(VFIO_PCI_MSIX_IRQ_INDEX, MSIX_RXTX_VECTOR, _rxtx_eventfd);
 
     /* RX/TX */
     _reg[HLREG0]  |= HLREG0_TXCRCEN | HLREG0_TXPADEN | HLREG0_RXCRCSTRIP;
 
-    /* Receive */
+    // Initialize RX general settings
+
+
+    _reg[FCTRL]   |= FCTRL_UPE | FCTRL_MPE | FCTRL_BAM;
+
+    // Initialize RX queue 0
     _rx_desc       = alloc_dma_mem<desc>(sizeof(desc[QUEUE_LEN]));
     pointer_store(_rx_desc, _reg[RDBAL0], _reg[RDBAH0]);
     _reg[RDLEN0]   = QUEUE_LEN * sizeof(desc);
@@ -239,13 +293,31 @@ namespace Switch {
       | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT);
     _reg[RSCCTL0] = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | RSCCTL_RSCEN;
 
-    _reg[RXDCTL0] |= RXDCTL_EN;
-    _reg[RXCTRL]  |= RXCTRL_RXEN;
-    _reg[FCTRL]   |= FCTRL_UPE | FCTRL_MPE | FCTRL_BAM;
+    _reg[RXDCTL0] |= RXDCTL_EN;	// XXX What else?
+    poll_for(1000, [&] { return (_reg[RXDCTL0] & RXDCTL_EN) != 0; });
 
-    /* Transmit */
-    _reg[DMATXCTL] |= DMATXCTL_TE;
+    // Enable receive path
+    _reg[SECRXCTRL] |= SECRXCTRL_SECRX_DIS;
+    poll_for(1000, [&] { return (_reg[SECRXSTAT] & SECRXSTAT_SECRX_RDY) != 0; });
+    _reg[RXCTRL]  |= RXCTRL_RXEN;
+    _reg[SECRXCTRL] &= ~SECRXCTRL_SECRX_DIS;
+
+    _reg[CTRL_EXT]    |=  CTRL_EXT_NS_DIS | CTRL_EXT_RO_DIS | CTRL_EXT_DRV_LOAD;
+    _reg[DCA_RXCTRL0] &= ~( (1 << 12 /* magic */) | DCA_RXCTRL_HEAD_RRO_EN | DCA_RXCTRL_DATA_RRO_EN | DCA_RXCTRL_DESC_RRO_EN);
+
+    /* Transmit enable. See Spec chapter 4.6.8 */
+
+    // Be sure that everything is disabled.
+    _reg[DMATXCTL] &= ~DMATXCTL_TE;
     _reg[TXDCTL0]  &= ~TXDCTL_EN;
+
+    // Program TX segmentation via DMTXCTL, DTXTCPFLGL, DTXTCPFLGH and DCA via DCA_TXCTRL.
+
+    _reg[RTTDCS]  |= RTTDCS_ARBDIS;
+
+    // Program DTXMXSZRQ, TXPBSIZE, TXPBTHRESH, MTQX, MNGTXMAP.
+
+    _reg[RTTDCS]  &= ~RTTDCS_ARBDIS;
 
     _tx_desc       = alloc_dma_mem<desc>(sizeof(desc[QUEUE_LEN]));
     pointer_store(_tx_desc,  _reg[TDBAL0], _reg[TDBAH0]);
@@ -256,12 +328,15 @@ namespace Switch {
      pointer_store((void *)_tx_writeback, _reg[TDBWAL0], _reg[TDBWAH0]);
      _reg[TDBWAL0] |= TDBWAL_HEAD_WB_EN;
 
-     _reg[TXDCTL0]  |= TXDCTL_EN | (1 << 8) | 32;
+     // XXX Check
+     _reg[TXDCTL0] =  (1 << 8) | 32;
 
-     poll_for(1000, [&] { return (_reg[TXDCTL0] & TXDCTL_EN) != 0; });
+    _reg[DMATXCTL] |= DMATXCTL_TE;
+    _reg[TXDCTL0]  |= TXDCTL_EN;
 
-    set_irq_eventfd(VFIO_PCI_MSIX_IRQ_INDEX, MSIX_MISC_VECTOR, _misc_eventfd);
-    set_irq_eventfd(VFIO_PCI_MSIX_IRQ_INDEX, MSIX_RXTX_VECTOR, _rxtx_eventfd);
+    poll_for(1000, [&] { return (_reg[TXDCTL0] & TXDCTL_EN) != 0; });
+
+    _reg[DCA_TXCTRL0] &= ~(DCA_TXCTRL_DATA_RRO_EN | DCA_TXCTRL_WB_RRO_EN | DCA_TXCTRL_DESC_RRO_EN);
 
     // Enable IRQs.
     _reg[EICR] = ~0U;
@@ -301,10 +376,14 @@ namespace Switch {
 
   void Intel82599Port::receive(Packet &p)
   {
-    logf("TX %u %u:%u TPT %u %016llx %016llx", *_tx_writeback, _reg[TDH0], _reg[TDT0], _reg[TPT], _tx_desc[0].hi, _tx_desc[0].lo);
-
     logf("TX %u fragment(s). XXX Ignoring virtio header!", p.fragments);
     
+    virtio_net_hdr_mrg_rxbuf const *hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf *>(p.fragment[0]);
+    assert(p.fragment_length[0] == sizeof(*hdr));
+
+    logf("HDR flags %x gso_type %x hdr_len %x gso_size %x csum_start %x _off %x",
+	 hdr->flags, hdr->gso_type, hdr->hdr_len, hdr->gso_size, hdr->csum_start, hdr->csum_offset);
+
     unsigned shadow_tdt = _shadow_tdt0;
     unsigned last_tdt   = shadow_tdt;
 
@@ -334,12 +413,6 @@ namespace Switch {
     logf("TX queue full!");
   }
 
-  void deadfill(uint8_t *p)
-  {
-    unsigned l = 4096/4;
-    asm volatile ( "rep stosl" : "+D" (p), "+c" (l) : "a" (0) : "memory");
-  }
-
   bool Intel82599Port::poll(Packet &p, bool enable_notifications)
   {
     if (UNLIKELY(enable_notifications)) {
@@ -362,15 +435,18 @@ namespace Switch {
       _shadow_tdh0 = advance_qp(_shadow_tdh0);
     }
 
-
-    desc &rx  = _rx_desc[_shadow_rdh0];
-
     // Consume buffers and remember our knowledge about buffer chains
     // in _rx_buffers until we either run out of descriptors with DD
     // set or we found a complete packet (EOP set).
 
-    while ((_shadow_rdh0 != _shadow_rdt0) and
-	   __atomic_load_n(&rx.lo, __ATOMIC_ACQUIRE) & RXDESC_LO_DD) {
+    while (LIKELY(_shadow_rdh0 != _shadow_rdt0)) {
+      desc rx;
+
+      rx.hi = __atomic_load_n(&_rx_desc[_shadow_rdh0].hi, __ATOMIC_ACQUIRE);
+      rx.lo = __atomic_load_n(&_rx_desc[_shadow_rdh0].lo, __ATOMIC_ACQUIRE);
+
+      if (not (rx.lo & RXDESC_LO_DD))
+	break;
 
       if (rx.lo & RXDESC_LO_EOP)
 	goto packet_eop;
@@ -430,16 +506,9 @@ namespace Switch {
       assert(cur_frag != 0 or not info.not_first);
     }
 
-    logf("Packet %u bytes.", unsigned(p.packet_length));
-
-    // XXX Debugging foo
-    Ethernet::Header *hdr = (Ethernet::Header *)p.fragment[1];
-    if (hdr->src == hdr->dst) {
-      logf(std::string("\n") + hexdump(p.fragment[1], p.fragment_length[0]));
-      assert(false);
-    }
-
+    // Advance our head pointer for last descriptor in packet.
     _shadow_rdh0 = advance_qp(_shadow_rdh0);
+
     return true;
   }
 
@@ -452,9 +521,6 @@ namespace Switch {
       rx_buffer *buf      = _rx_buffers[idx].buffer;
 
       not_first = _rx_buffers[idx].not_first;
-
-      //logf("Marking buffer idx %u %p done. not_first %u", idx, buf->data, not_first);
-
       memset(&_rx_buffers[idx],          0, sizeof(_rx_buffers[0]));
 
       // Not necessary, but let's be on the careful side of things.
@@ -480,7 +546,7 @@ namespace Switch {
 
     while ((res = read(misc_event_fd(), &v, sizeof(v))) == sizeof(v)) {
       logf(status());
-      unmask_misc_irq();      
+      unmask_misc_irq();
     }
 
     logf("IRQ thread exits.");
@@ -498,10 +564,8 @@ namespace Switch {
   {
     desc r;
 
-    logf("TX -> %p+%u EOP:%u", data, len, eop);
-
     r.hi = (uintptr_t)data;
-    r.lo = len | TXDESC_LO_DTYP_ADV | TXDESC_LO_DCMD_DEXT
+    r.lo = len //| TXDESC_LO_DTYP_ADV | TXDESC_LO_DCMD_DEXT
       | TXDESC_LO_DCMD_IFCS
       | (eop ? (TXDESC_LO_DCMD_EOP | TXDESC_LO_DCMD_RS) : 0);
     return r;
