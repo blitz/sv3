@@ -162,7 +162,8 @@ namespace Switch {
     RXDESC_HI_RSCCNT_SHIFT  = 17,
     RXDESC_HI_RSCCNT_MASK   = 0xFULL << RXDESC_HI_RSCCNT_SHIFT,
 
-    TXDESC_LO_DTYP_ADV    = (3ULL << 20),
+    TXDESC_LO_DTYP_ADV_DTA = (3ULL << 20),
+    TXDESC_LO_DTYP_ADV_CTX = (2ULL << 20),
     TXDESC_LO_DCMD_DEXT   = (1ULL << (5 + 24)),
     TXDESC_LO_DCMD_RS     = (1ULL << (3 + 24)),
     TXDESC_LO_DCMD_IFCS   = (1ULL << (1 + 24)),
@@ -394,7 +395,8 @@ namespace Switch {
 
       // XXX Use non-temporal moves and sfence before TDT store.
       _tx_desc[shadow_tdt] = populate_tx_desc(p.fragment[i], p.fragment_length[i],
-       					      i+1 == p.fragments);
+					      p.packet_length - p.fragment_length[0],
+					      i == 1, i+1 == p.fragments);
 
       shadow_tdt = advance_qp(shadow_tdt);
       if (UNLIKELY(_shadow_tdh0 == shadow_tdt))
@@ -560,14 +562,20 @@ namespace Switch {
     return r;
   }
 
-  Intel82599::desc Intel82599Port::populate_tx_desc(uint8_t *data, uint16_t len, bool eop)
+  Intel82599::desc Intel82599Port::populate_tx_desc(uint8_t *data, uint16_t len, uint16_t total_len,
+						    bool first, bool eop)
   {
     desc r;
 
     r.hi = (uintptr_t)data;
-    r.lo = len //| TXDESC_LO_DTYP_ADV | TXDESC_LO_DCMD_DEXT
-      | TXDESC_LO_DCMD_IFCS
-      | (eop ? (TXDESC_LO_DCMD_EOP | TXDESC_LO_DCMD_RS) : 0);
+    r.lo = (uint64_t)len | TXDESC_LO_DTYP_ADV_DTA | TXDESC_LO_DCMD_DEXT;
+
+    if (first)
+      r.lo |= ((uint64_t)total_len << 46) | TXDESC_LO_DCMD_IFCS;
+
+    if (eop)
+      r.lo |= TXDESC_LO_DCMD_EOP | TXDESC_LO_DCMD_RS;
+
     return r;
   }
 

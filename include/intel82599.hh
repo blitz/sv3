@@ -152,8 +152,8 @@ namespace Switch {
 
     void misc_thread_fn();
     desc populate_rx_desc(uint8_t *data);
-    desc populate_tx_desc(uint8_t *data, uint16_t len, bool eop);
-
+    desc populate_tx_desc(uint8_t *data, uint16_t len, uint16_t total_len,
+			  bool first, bool eop);
   public:
 
     void receive(Packet &p) override;
