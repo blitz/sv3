@@ -212,13 +212,13 @@ namespace Switch {
 
 	_file_descriptors.push_back(incoming_fd);
 
-	_sw.logf("Received file descriptor %d from client %d.", incoming_fd, _fd);
+	// _sw.logf("Received file descriptor %d from client %d.", incoming_fd, _fd);
 	if (req.type == EXTERNALPCI_REQ_REGION) {
 	  req.region.fd = incoming_fd;
 	} else if (req.type == EXTERNALPCI_REQ_IRQ) {
 	  req.irq_req.fd = incoming_fd;
 	} else {
-	  _sw.logf("... but we didn't expect one!\n");
+	  _sw.logf("... but we didn't expect a file descriptor!\n");
 	  goto do_close;
 	}
       } else {

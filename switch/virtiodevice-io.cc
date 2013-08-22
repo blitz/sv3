@@ -39,9 +39,7 @@ namespace Switch {
       | (1 << VIRTIO_NET_F_MRG_RXBUF)
       | (1 << VIRTIO_NET_F_GUEST_CSUM)
       | (1 << VIRTIO_NET_F_GUEST_TSO4)
-      | (1 << VIRTIO_NET_F_GUEST_TSO6)
-      | (1 << VIRTIO_NET_F_GUEST_UFO)
-      | (1 << VIRTIO_NET_F_GUEST_ECN);
+      | (1 << VIRTIO_NET_F_GUEST_TSO6);
 
     if (UNLIKELY((guest_features & fast_path_features) != fast_path_features)) {
       throw PortBrokenException(*this, "XXX implement slow path");
@@ -385,8 +383,8 @@ namespace Switch {
       break;
     }
 
-    logf("io read  %04" PRIx64 "+%x -> %" PRIx64, addr, size,
-         val & ((1 << 8*size) - 1));
+    // logf("io read  %04" PRIx64 "+%x -> %" PRIx64, addr, size,
+    //      val & ((1 << 8*size) - 1));
     return val;
   }
 
@@ -520,7 +518,7 @@ namespace Switch {
       logf("Unimplemented register %x.", addr);
       break;
     }
-    logf("io write %04" PRIx64 "+%x <- %" PRIx64, addr, size, val);
+    // logf("io write %04" PRIx64 "+%x <- %" PRIx64, addr, size, val);
   }
 
   void VirtioDevice::reset()

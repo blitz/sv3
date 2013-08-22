@@ -19,6 +19,9 @@
 
 namespace Switch {
 
+  static const unsigned itr_us = 10000;
+  static const bool enable_rsc = true;
+
   // Constants
 
 #define I99_REG(name, val) name = (val)/4
@@ -41,6 +44,7 @@ namespace Switch {
 
     I99_REG(IVAR_MISC, 0xA00),
     I99_REG(IVAR0,    0x0900),
+    I99_REG(EITR0,    0x0820),
 
     I99_REG(RDRXCTL,  0x2F00),
     I99_REG(RXCTRL,   0x3000),
@@ -82,6 +86,9 @@ namespace Switch {
 
     I99_REG(SECRXCTRL, 0x8D00),
     I99_REG(SECRXSTAT, 0x8D04),
+
+    I99_REG(PSRTYPE0,  0xEA00),
+
   };
 #undef I99_REG
 
@@ -104,8 +111,14 @@ namespace Switch {
     GPIE_MULTIPLE_MSIX    = 1U << 4,
     GPIE_EIAME            = 1U << 30, /* Automask Enable */
     GPIE_PBA              = 1U << 31, /* Support PBA bits */
+    GPIE_RSC_DELAY_SHIFT  = 11,
+    GPIE_RSC_DELAY_MASK   = 3U << GPIE_RSC_DELAY_SHIFT,
+
+    EITR_INTERVAL_SHIFT   = 3,
+    EITR_INTERVAL_MASK    = 0x1FFU << EITR_INTERVAL_SHIFT,
 
     RDRXCTL_CRC_STRIP     = 1U << 0,
+    RDRXCTL_RSCACKC       = 1U << 25,
 
     RXCTRL_RXEN           = 1U << 0,
 
@@ -130,6 +143,7 @@ namespace Switch {
     SRRCTL_DROP_EN        = (1 << 28),
     SRRCTL_BSIZEPACKET_MASK  = 0x1F,
     SRRCTL_BSIZEPACKET_SHIFT = 0,
+    SRRCTL_BSIZEHEADER_SHIFT = 8,
 
     RSCCTL_MAXDESC_MASK   = (3 << 2),
     RSCCTL_MAXDESC_16     = (3 << 2),
@@ -153,6 +167,8 @@ namespace Switch {
     SECRXCTRL_SECRX_DIS   = (1U << 0),
     SECRXSTAT_SECRX_RDY   = (1U << 0),
 
+    PSRTYPE_PSR_TYPE4     = (1U << 4),
+
     RXDESC_LO_DD          = (1ULL << 0),
     RXDESC_LO_EOP         = (1ULL << 1),
     RXDESC_LO_NEXTP_SHIFT = 4,
@@ -161,13 +177,34 @@ namespace Switch {
     RXDESC_LO_PKT_LEN_MASK  = 0xFFFFULL << RXDESC_LO_PKT_LEN_SHIFT,
     RXDESC_HI_RSCCNT_SHIFT  = 17,
     RXDESC_HI_RSCCNT_MASK   = 0xFULL << RXDESC_HI_RSCCNT_SHIFT,
+    RXDESC_LO_STATUS_IPCS   = (1ULL << 6),
+    RXDESC_LO_STATUS_L4I    = (1ULL << 5),
+    RXDESC_LO_STATUS_UDPV   = (1ULL << 10),
+    RXDESC_LO_ERROR_IPE     = (1ULL << (11 + 20)),
+    RXDESC_LO_ERROR_L4E     = (1ULL << (10 + 20)),
+    RXDESC_LO_ERROR_RXE     = (1ULL << (9 + 20)),
+
 
     TXDESC_LO_DTYP_ADV_DTA = (3ULL << 20),
     TXDESC_LO_DTYP_ADV_CTX = (2ULL << 20),
+    TXDESC_LO_DCMD_TSE    = (1ULL << (7 + 24)),
     TXDESC_LO_DCMD_DEXT   = (1ULL << (5 + 24)),
     TXDESC_LO_DCMD_RS     = (1ULL << (3 + 24)),
     TXDESC_LO_DCMD_IFCS   = (1ULL << (1 + 24)),
     TXDESC_LO_DCMD_EOP    = (1ULL << (0 + 24)),
+    TXDESC_HI_MACLEN_SHIFT = 9,
+    TXDESC_HI_IPLEN_SHIFT = 0,
+    TXDESC_LO_MSS_SHIFT   = 48,
+    TXDESC_LO_L4LEN_SHIFT = 40,
+    TXDESC_LO_IDX         = (1ULL << 36),
+    TXDESC_LO_TUCMD_IPV4    = (1ULL << (1 + 9)),
+    TXDESC_LO_TUCMD_L4_UDP  = (0ULL << (2 + 9)),
+    TXDESC_LO_TUCMD_L4_TCP  = (1ULL << (2 + 9)),
+
+    TXDESC_LO_POPTS_TXSM    = (1ULL << (1 + 40)),
+    TXDESC_LO_POPTS_IXSM    = (1ULL << (0 + 40)),
+    TXDESC_LO_CC            = (1ULL << 39),
+
   };
 
   void pointer_store(void *p,
@@ -199,35 +236,13 @@ namespace Switch {
     //uint32_t status = _reg[STATUS];
 
     static const char *speed[] = { "???", "100 MBit/s", "1 GBit/s", "10 GBit/s" };
+    unsigned speed_idx = (links >> LINKS_LINK_SPEED_SHIFT) & LINKS_LINK_SPEED_MASK;
 
     ss << "Link is "
        << ((links & LINKS_LINK_UP) ? "UP" : "DOWN")
        << " at "
-       << speed[(links >> LINKS_LINK_SPEED_SHIFT) & LINKS_LINK_SPEED_MASK]
+       << speed[speed_idx]
        << ".";
-
-    // if (links & (1U << 0)) ss << " KX_SIG_DET";
-    // if (links & (1U << 1)) ss << " FEC_SIG_DET";
-    // if (links & (1U << 2)) ss << " FEC_BLOCK_LOCK";
-    // if (links & (1U << 3)) ss << " KR_HI_BERR";
-    // if (links & (1U << 4)) ss << " KR_PCS_BLOCK_LOCK";
-    // if (links & (1U << 5)) ss << " KX_AN_NEXT";
-    // if (links & (1U << 6)) ss << " KX_AN_PAGE";
-    // if (links & (1U << 7)) ss << " STATUS_UP";
-    // ss << "\n";
-    // ss << "KX4_SIG_DET:" << std::hex << ((links >> 8) & 0xF);
-
-    // if (links & (1U << 12)) ss << " KR_SIG_DET";
-    // ss << "10G_LANE_SYNC:" << std::hex << ((links >> 13) & 0xF);
-    // if (links & (1U << 17)) ss << " 10G_ALIGN";
-    // if (links & (1U << 18)) ss << " 10G_SYNC";
-
-    // ss << "\n";
-    // ss << " LINKS " << std::hex << links;
-    // ss << " LINKS2 " << std::hex << _reg[0x4324/4];
-
-
-    // XXX Check sync, align, link up, speed
 
     return ss.str();
   }
@@ -254,10 +269,18 @@ namespace Switch {
 
     //printf("MAC %012llx\n", mac & ((1ULL << 48) - 1));
 
-    /* We configure two MSI-X vectors. Interrupts are automasked. */
-    _reg[GPIE] |= GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA;
+    // Recommended RSC delay numbers are: 8 us at 10 Gb/s link and 28 us at 1 Gb/s link.
+    // RSC is not recommended when operating at 100 Mb/s link.
+    // EITR must be larger than RSC_DELAY!
+
+    // Don't touch RSC/EITR settings after we're done configuring!
+    // This seems to cause queue hangs.
+    _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (4 << GPIE_RSC_DELAY_SHIFT);
+    _reg[EITR0] = (itr_us / 2) << EITR_INTERVAL_SHIFT;
+
+    // We configure two MSI-X vectors. Interrupts are automasked.
     _reg[EIAM] = 0x7FFFFFFF;
-    _reg[EIAC] = 0xFFFF | (1 << 30);
+    _reg[EIAC] = 0xFFFF;// | (1 << 30);
 
     /* TCP Timer and Misc map to IRQ MSIX_MISC_VECTOR. */
     _reg[IVAR_MISC] = (0x80 | MSIX_MISC_VECTOR) |
@@ -283,7 +306,7 @@ namespace Switch {
     pointer_store(_rx_desc, _reg[RDBAL0], _reg[RDBAH0]);
     _reg[RDLEN0]   = QUEUE_LEN * sizeof(desc);
     _reg[RDT0] = _reg[RDH0] = 0;
-    _reg[RDRXCTL] |= RDRXCTL_CRC_STRIP;
+    _reg[RDRXCTL] |= RDRXCTL_CRC_STRIP | RDRXCTL_RSCACKC;
 
     static_assert(RX_BUFFER_SIZE % 1024 == 0, "RX buffer size must be multiple of 1024");
     /* MAXDESC * SRRCTL.BSIZEPACKET must be smaller than (2^16 - 1)! */
@@ -291,17 +314,19 @@ namespace Switch {
 
     uint32_t srrctl = (_reg[SRRCTL0] & ~(SRRCTL_DESCTYPE_MASK | SRRCTL_BSIZEPACKET_MASK));
     _reg[SRRCTL0] = srrctl | SRRCTL_DESCTYPE_ADV1B | SRRCTL_DROP_EN
-      | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT);
-    _reg[RSCCTL0] = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | RSCCTL_RSCEN;
+      | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT) | (4 << SRRCTL_BSIZEHEADER_SHIFT);
+    _reg[RSCCTL0]  = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | (enable_rsc ? RSCCTL_RSCEN : 0);
 
-    _reg[RXDCTL0] |= RXDCTL_EN;	// XXX What else?
+    _reg[PSRTYPE0] = PSRTYPE_PSR_TYPE4;
+
+    _reg[RXDCTL0] = RXDCTL_EN;	// XXX What else?
     poll_for(1000, [&] { return (_reg[RXDCTL0] & RXDCTL_EN) != 0; });
 
     // Enable receive path
-    _reg[SECRXCTRL] |= SECRXCTRL_SECRX_DIS;
+    _reg[SECRXCTRL]   |= SECRXCTRL_SECRX_DIS;
     poll_for(1000, [&] { return (_reg[SECRXSTAT] & SECRXSTAT_SECRX_RDY) != 0; });
-    _reg[RXCTRL]  |= RXCTRL_RXEN;
-    _reg[SECRXCTRL] &= ~SECRXCTRL_SECRX_DIS;
+    _reg[RXCTRL]      |= RXCTRL_RXEN;
+    _reg[SECRXCTRL]   &= ~SECRXCTRL_SECRX_DIS;
 
     _reg[CTRL_EXT]    |=  CTRL_EXT_NS_DIS | CTRL_EXT_RO_DIS | CTRL_EXT_DRV_LOAD;
     _reg[DCA_RXCTRL0] &= ~( (1 << 12 /* magic */) | DCA_RXCTRL_HEAD_RRO_EN | DCA_RXCTRL_DATA_RRO_EN | DCA_RXCTRL_DESC_RRO_EN);
@@ -375,49 +400,162 @@ namespace Switch {
 
   // Intel82599 Switch Port
 
+  bool Intel82599Port::tx_has_room()
+  {
+    return advance_qp(_shadow_tdt0) != _shadow_tdh0;
+  }
+
   void Intel82599Port::receive(Packet &p)
   {
-    logf("TX %u fragment(s). XXX Ignoring virtio header!", p.fragments);
+    // logf("TX %u fragment(s). XXX Ignoring virtio header!", p.fragments);
     
     virtio_net_hdr_mrg_rxbuf const *hdr = reinterpret_cast<virtio_net_hdr_mrg_rxbuf *>(p.fragment[0]);
     assert(p.fragment_length[0] == sizeof(*hdr));
+    assert(p.fragments > 1);
 
-    logf("HDR flags %x gso_type %x hdr_len %x gso_size %x csum_start %x _off %x",
-	 hdr->flags, hdr->gso_type, hdr->hdr_len, hdr->gso_size, hdr->csum_start, hdr->csum_offset);
+    // We assume that flags is a good indicator for anything that needs offloads.
+    assert(not (not hdr->flags and hdr->gso_type));
 
-    unsigned shadow_tdt = _shadow_tdt0;
-    unsigned last_tdt   = shadow_tdt;
+    unsigned payload_size  = p.packet_length - p.fragment_length[0];
+    uint64_t offload_flags = 0;
 
-    for (unsigned i = 1; i < p.fragments; i++) {
-      last_tdt = shadow_tdt;
+    if (hdr->flags) {
+      if (not tx_has_room()) goto fail;
 
-      _tx_buffers[shadow_tdt].need_completion = false;
+      Ethernet::Header *ehdr = (Ethernet::Header *)p.fragment[1];
+      unsigned maclen = sizeof(Ethernet::Header);
+      bool     ipv4   = ehdr->type == Ethernet::Ethertype::IPV4;
+      bool     udp    = (uint16_t)IPv4::Proto::UDP == (ipv4 ?
+						       (uint16_t)ehdr->ipv4->proto :
+						       (uint16_t)ehdr->ipv6->next_header);
+      assert((uint16_t)IPv4::Proto::UDP == (uint16_t)IPv6::Proto::UDP);
 
-      // XXX Use non-temporal moves and sfence before TDT store.
-      _tx_desc[shadow_tdt] = populate_tx_desc(p.fragment[i], p.fragment_length[i],
-					      p.packet_length - p.fragment_length[0],
-					      i == 1, i+1 == p.fragments);
+      // This is only valid when csum_start is set.
+      unsigned iplen        = hdr->csum_start - maclen;
 
-      shadow_tdt = advance_qp(shadow_tdt);
-      if (UNLIKELY(_shadow_tdh0 == shadow_tdt))
-	goto fail;
+      // XXX Assert minimum packet length!
+
+      desc ctx;;
+      ctx.hi = (uint64_t)maclen << TXDESC_HI_MACLEN_SHIFT;
+      ctx.lo = TXDESC_LO_DCMD_DEXT | TXDESC_LO_DTYP_ADV_CTX;
+
+      if (hdr->gso_type != VIRTIO_NET_HDR_GSO_NONE) {
+	// Needs segmentation.
+	assert(not udp);
+
+	// hdr_len in virtio header is crap. m( Fuck it, we'll do it live!
+	unsigned l4len = ((TCP::Header *)((char *)ehdr + hdr->csum_start))->off * 4;
+
+	// Payload size doesn't include header in TSO mode. If this is
+	// wrong, the NIC will complete descriptors past TDT!
+	payload_size -= l4len + maclen + iplen;
+
+	// logf("TX segment type %u csum_start %u csum_offset %u hdr_len %u l4len %u gso_size %u",
+	//      hdr->gso_type, hdr->csum_start, hdr->csum_offset, hdr->hdr_len, l4len, hdr->gso_size);
+
+
+	ctx.lo |= (uint64_t)hdr->gso_size << TXDESC_LO_MSS_SHIFT;
+	ctx.lo |= (uint64_t)l4len         << TXDESC_LO_L4LEN_SHIFT;
+
+	if (ipv4) {
+	  // Linux prefills this, but we need it to be zero.
+	  ehdr->ipv4->checksum = 0;
+
+	  // The TCP checksum needs to be filled with a partial-pseudo
+	  // header.
+	  ehdr->ipv4->payload()->tcp.checksum = OnesComplement::fold(ehdr->ipv4->pseudo_checksum(false));
+
+	} else {
+	  // IPv6
+	  assert(false);
+	}
+
+	offload_flags |= (ipv4 ? TXDESC_LO_POPTS_IXSM : 0ULL);
+	offload_flags |= TXDESC_LO_DCMD_TSE;
+      }
+
+      if (hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
+	assert(not ipv4 or (iplen == (unsigned)ehdr->ipv4->ihl*4));
+
+	ctx.hi |= (uint64_t)iplen << TXDESC_HI_IPLEN_SHIFT;
+	ctx.lo |= 0
+	  | (udp ? TXDESC_LO_TUCMD_L4_UDP : TXDESC_LO_TUCMD_L4_TCP)
+	  | (ipv4 ? TXDESC_LO_TUCMD_IPV4 : 0);
+
+	offload_flags |= TXDESC_LO_POPTS_TXSM;
+
+	// logf("TX csum ip %04x l4 %04x",
+	//      ehdr->ipv4->checksum, ehdr->ipv4->payload()->tcp.checksum);
+
+	// Can't enabled IP checksumming, because it will assume 0 in
+	// the checksum field and Linux has already computed this.
+	// offload_flags |= (ipv4 ? TXDESC_LO_POPTS_IXSM : 0ULL);
+      }
+
+      // logf("CTX %016llx %016llx", ctx.hi, ctx.lo);
+
+      _tx_buffers[_shadow_tdt0].need_completion = false;
+      _tx_desc[_shadow_tdt0] = ctx;
+
+      _tx0_inflight++;
+
+      _shadow_tdt0 = advance_qp(_shadow_tdt0);
+      __atomic_store_n(&_reg[TDT0], _shadow_tdt0, __ATOMIC_RELEASE);
     }
 
-    _tx_buffers[last_tdt].need_completion = true;
-    _tx_buffers[last_tdt].info = p.copy_completion_info();
 
-    _shadow_tdt0 = shadow_tdt;
-    __atomic_store_n(&_reg[TDT0], shadow_tdt, __ATOMIC_RELEASE);
+    {
+      unsigned shadow_tdt = _shadow_tdt0;
+      unsigned last_tdt   = shadow_tdt;
+      unsigned s = 0;
 
+      for (unsigned i = 1; i < p.fragments; i++) {
+	last_tdt = shadow_tdt;
+
+	_tx_buffers[shadow_tdt].need_completion = false;
+
+	// logf("TX %s len %x", (i+1 == p.fragments) ? "EOP" : "   ", p.fragment_length[i]);
+	_tx_desc[shadow_tdt] = populate_tx_desc(p.fragment[i], p.fragment_length[i],
+						payload_size,
+						i == 1, offload_flags,
+						i+1 == p.fragments);
+
+	// logf(" TX %016llx %016llx", _tx_desc[shadow_tdt].hi, _tx_desc[shadow_tdt].lo);
+
+	s++;
+	shadow_tdt = advance_qp(shadow_tdt);
+	if (UNLIKELY(_shadow_tdh0 == shadow_tdt))
+	  goto fail;
+      }
+
+      _tx_buffers[last_tdt].need_completion = true;
+      _tx_buffers[last_tdt].info = p.copy_completion_info();
+
+      _tx0_inflight += s;
+      _shadow_tdt0 = shadow_tdt;
+      __atomic_store_n(&_reg[TDT0], shadow_tdt, __ATOMIC_RELEASE);
+    }
+
+    assert(_shadow_tdt0 == _reg[TDT0]);
     return;
 
   fail:
     logf("TX queue full!");
+
+    assert(_shadow_tdt0 == _reg[TDT0]);
   }
 
   bool Intel82599Port::poll(Packet &p, bool enable_notifications)
   {
+    assert(_shadow_tdt0 == _reg[TDT0]);
+
     if (UNLIKELY(enable_notifications)) {
+      // logf("Unmasking RX/TX IRQ. EICR %08x\n"
+      // 	   "T %u:%u OUR %u:%u (wb %u)\n"
+      // 	   "room %u inflight %u",
+      // 	   _reg[EICR],
+      // 	   _reg[TDH0], _reg[TDT0], _shadow_tdh0, _shadow_tdt0, *_tx_writeback,
+      // 	   tx_has_room(), tx_inflight);
       unmask_rxtx_irq();
     }
 
@@ -426,13 +564,17 @@ namespace Switch {
     unsigned tx_wb = __atomic_load_n(_tx_writeback, __ATOMIC_RELAXED);
     while (tx_wb != _shadow_tdh0) {
       auto &info = _tx_buffers[_shadow_tdh0];
-      logf("%u %u:%u Completed TX index %u. Needed callback: %u.",
-	   tx_wb, _reg[TDH0], _reg[TDT0],
-	   _shadow_tdh0, info.need_completion);
+      // logf("%u %u:%u Completed TX index %u. Needed callback: %u.",
+      // 	   tx_wb, _reg[TDH0], _reg[TDT0],
+      // 	   _shadow_tdh0, info.need_completion);
+
       // Complete TX packets. This is rather easy because we don't
       // need to look at the descriptors.
       if (info.need_completion)
 	info.info.src_port->mark_done(info.info);
+
+      _tx0_inflight--;
+      assert(_tx0_inflight >= 0);
 
       _shadow_tdh0 = advance_qp(_shadow_tdh0);
     }
@@ -441,14 +583,16 @@ namespace Switch {
     // in _rx_buffers until we either run out of descriptors with DD
     // set or we found a complete packet (EOP set).
 
+    desc rx;
     while (LIKELY(_shadow_rdh0 != _shadow_rdt0)) {
-      desc rx;
-
       rx.hi = __atomic_load_n(&_rx_desc[_shadow_rdh0].hi, __ATOMIC_ACQUIRE);
       rx.lo = __atomic_load_n(&_rx_desc[_shadow_rdh0].lo, __ATOMIC_ACQUIRE);
 
       if (not (rx.lo & RXDESC_LO_DD))
 	break;
+
+      // logf("RX %s %016llx %016llx", (rx.lo & RXDESC_LO_EOP) ? "EOP" : "   ",
+      //  	   rx.hi, rx.lo);
 
       if (rx.lo & RXDESC_LO_EOP)
 	goto packet_eop;
@@ -456,6 +600,8 @@ namespace Switch {
       unsigned rsccnt = (rx.hi & RXDESC_HI_RSCCNT_MASK) >> RXDESC_HI_RSCCNT_SHIFT;
       unsigned nextp  = (rsccnt == 0) ?
 	advance_qp(_shadow_rdt0) : ((rx.lo & RXDESC_LO_NEXTP_MASK) >> RXDESC_LO_NEXTP_SHIFT);
+
+      // logf("   RSCCNT %02u NEXTP %04u", rsccnt, nextp);
 
       _rx_buffers[nextp].not_first  = true;
       _rx_buffers[nextp].rsc_last   = _shadow_rdt0;
@@ -468,7 +614,7 @@ namespace Switch {
 
   packet_eop:
     // Received a complete packet. Backtrace our steps and build a
-    // fragment list.
+    // fragment list. The last descriptor is in rx.
 
     auto &last_info = _rx_buffers[_shadow_rdh0];
 
@@ -478,13 +624,17 @@ namespace Switch {
     p.packet_length      = sizeof(last_info.hdr);
     p.fragment[0]        = (uint8_t *)&last_info.hdr;
 
-    memset(p.fragment[0], 0, sizeof(last_info.hdr));
-    // XXX Fill out header with checksum info
-    // When IPCS or L4CS is set, check IPE or TCPE in Error field
+    memset(&last_info.hdr, 0, sizeof(last_info.hdr));
 
+    // Inform the guest that checksums are valid, if the NIC has seen
+    // a correct L4 checksum. Chicken out, if the hardware has seen a
+    // broken IPv4 header.
+    if ((rx.lo & RXDESC_LO_STATUS_L4I) and (rx.lo & RXDESC_LO_ERROR_L4E)
+        and (not (rx.lo & RXDESC_LO_STATUS_IPCS) or (rx.lo & RXDESC_LO_ERROR_IPE)))
+      last_info.hdr.flags = VIRTIO_NET_HDR_F_DATA_VALID;
+    
     unsigned fragments = 1 + _rx_buffers[_shadow_rdh0].rsc_number;
     p.fragments        = 1 + fragments;
-    //logf("RX %2u fragments", p.fragments);
 
     assert(p.fragments < Packet::MAX_FRAGMENTS);
 
@@ -502,7 +652,7 @@ namespace Switch {
       p.fragment_length[cur_frag] = flen;
       p.fragment[cur_frag]        = info.buffer->data;
 
-      //logf("Fragment %02u: %p+%x idx %u", cur_frag, info.buffer->data, flen, cur_idx);
+      // logf("Fragment %02u: %p+%x idx %u", cur_frag, info.buffer->data, flen, cur_idx);
 
       // First fragment has not_first == false.
       assert(cur_frag != 0 or not info.not_first);
@@ -523,6 +673,7 @@ namespace Switch {
       rx_buffer *buf      = _rx_buffers[idx].buffer;
 
       not_first = _rx_buffers[idx].not_first;
+
       memset(&_rx_buffers[idx],          0, sizeof(_rx_buffers[0]));
 
       // Not necessary, but let's be on the careful side of things.
@@ -548,6 +699,7 @@ namespace Switch {
 
     while ((res = read(misc_event_fd(), &v, sizeof(v))) == sizeof(v)) {
       logf(status());
+
       unmask_misc_irq();
     }
 
@@ -563,7 +715,7 @@ namespace Switch {
   }
 
   Intel82599::desc Intel82599Port::populate_tx_desc(uint8_t *data, uint16_t len, uint16_t total_len,
-						    bool first, bool eop)
+						    bool first, uint64_t first_flags, bool eop)
   {
     desc r;
 
@@ -571,7 +723,7 @@ namespace Switch {
     r.lo = (uint64_t)len | TXDESC_LO_DTYP_ADV_DTA | TXDESC_LO_DCMD_DEXT;
 
     if (first)
-      r.lo |= ((uint64_t)total_len << 46) | TXDESC_LO_DCMD_IFCS;
+      r.lo |= ((uint64_t)total_len << 46) | TXDESC_LO_DCMD_IFCS | first_flags;
 
     if (eop)
       r.lo |= TXDESC_LO_DCMD_EOP | TXDESC_LO_DCMD_RS;
@@ -585,7 +737,7 @@ namespace Switch {
       Port(sw, name),
       _misc_thread(&Intel82599Port::misc_thread_fn, this),
       _shadow_rdt0(0), _shadow_rdh0(0),
-      _shadow_tdt0(0), _shadow_tdh0(0)
+      _shadow_tdt0(0), _shadow_tdh0(0), _tx0_inflight(0)
   {
 
     _switch.register_dma_memory_callback([&] (void *p, size_t s) {

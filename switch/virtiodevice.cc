@@ -79,13 +79,9 @@ namespace Switch {
       | (1 << VIRTIO_NET_F_MRG_RXBUF)
       | (1 << VIRTIO_NET_F_GUEST_TSO4)
       | (1 << VIRTIO_NET_F_GUEST_TSO6)
-      | (1 << VIRTIO_NET_F_GUEST_UFO)
-      | (1 << VIRTIO_NET_F_GUEST_ECN)
       | (1 << VIRTIO_NET_F_CSUM)
       | (1 << VIRTIO_NET_F_HOST_TSO4)
-      | (1 << VIRTIO_NET_F_HOST_TSO6)
-      | (1 << VIRTIO_NET_F_HOST_UFO)
-      | (1 << VIRTIO_NET_F_HOST_ECN);
+      | (1 << VIRTIO_NET_F_HOST_TSO6);
   }
 
 }

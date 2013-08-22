@@ -73,9 +73,10 @@ namespace IPv4 {
     Payload const *payload() const { return reinterpret_cast<Payload const *>(options + ihl - 5); }
 
     /// Returns an unfolded checksum for the TCP/UDP pseudo header.
-    unsigned long pseudo_checksum() const {
+    unsigned long pseudo_checksum(bool include_length = true) const {
       // Initial state covers TCP length and IP protocol.
-      unsigned long state = static_cast<unsigned long>(Endian::bswap(static_cast<uint32_t>(proto) + payload_length()));
+      unsigned long state = static_cast<unsigned long>(Endian::bswap(static_cast<uint32_t>(proto) +
+								     (include_length ? payload_length() : 0)));
       // Now add both IP addresses
 #if      __SIZEOF_LONG__ == 8
       state = OnesComplement::add(state, *reinterpret_cast<unsigned long const *>(&src));

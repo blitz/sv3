@@ -112,6 +112,8 @@ namespace Switch {
 
     uint16_t    _shadow_tdt0;
     uint16_t    _shadow_tdh0;
+    uint16_t    _tx0_inflight;
+
 
     // Remembers which buffer we stored in an RX queue entry.
     struct {
@@ -150,10 +152,14 @@ namespace Switch {
       return idx;
     }
 
+    // Is there space for a single TX descriptor?
+    bool tx_has_room();
+
     void misc_thread_fn();
     desc populate_rx_desc(uint8_t *data);
     desc populate_tx_desc(uint8_t *data, uint16_t len, uint16_t total_len,
-			  bool first, bool eop);
+			  bool first, uint64_t first_flags,
+			  bool eop);
   public:
 
     void receive(Packet &p) override;

@@ -72,6 +72,11 @@ namespace Switch {
 
     for (Port *src_port : ports) { // Packet switching loop
 
+      // XXX Be fair! Instead of a fixed batch size, count packets
+      // copied, fragments handled and packets handled and compute an
+      // estimate of the time we needed from that. Then we can switch
+      // packets until that estimate crosses a threshold.
+
       for (unsigned quota = _batch_size; quota > 0; quota--) {
 	Packet p(src_port);
 
@@ -126,7 +131,7 @@ namespace Switch {
 
   void Switch::loop()
   {
-    Timer rcu_timer(1, 1000 /* ms */);   
+    Timer rcu_timer(1, 1 /* s */);   
     Timer idle_timer(_poll_us, 1000000 /* us */);
 
     logf("Main loop entered. Idle poll time is %uus. Batch size is %u.",
