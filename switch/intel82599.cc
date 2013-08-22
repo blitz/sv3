@@ -497,7 +497,7 @@ namespace Switch {
 	// logf("TX csum ip %04x l4 %04x",
 	//      ehdr->ipv4->checksum, ehdr->ipv4->payload()->tcp.checksum);
 
-	// Can't enabled IP checksumming, because it will assume 0 in
+	// Can't enable IP checksumming, because it will assume 0 in
 	// the checksum field and Linux has already computed this.
 	// offload_flags |= (ipv4 ? TXDESC_LO_POPTS_IXSM : 0ULL);
       }
@@ -614,7 +614,7 @@ namespace Switch {
       // logf("   RSCCNT %02u NEXTP %04u", rsccnt, nextp);
 
       _rx_buffers[nextp].not_first  = true;
-      _rx_buffers[nextp].rsc_last   = _shadow_rdt0;
+      _rx_buffers[nextp].rsc_last   = _shadow_rdh0;
       _rx_buffers[nextp].rsc_number = _rx_buffers[_shadow_rdh0].rsc_number + 1;
 
       _shadow_rdh0 = advance_qp(_shadow_rdh0);
@@ -666,6 +666,7 @@ namespace Switch {
 
       // First fragment has not_first == false.
       assert(cur_frag != 0 or not info.not_first);
+      cur_idx = info.rsc_last;
     }
 
     // Advance our head pointer for last descriptor in packet.
