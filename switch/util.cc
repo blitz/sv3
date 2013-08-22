@@ -14,6 +14,8 @@
 
 #include <util.hh>
 #include <cxxabi.h>
+#include <sched.h>
+#include <unistd.h>
 #include <sstream>
 #include <boost/format.hpp>
 
@@ -64,5 +66,43 @@ std::string hexdump(const void *p, unsigned len)
   return ss.str();
 }
 
+bool system_supports_dca()
+{
+  uint32_t eax = 1;
+  uint32_t ecx;
+
+  asm ("cpuid" : "+a" (eax), "=c" (ecx) :: "ebx", "edx");
+  
+  bool cpu_supports_dca = ecx & (1 << 18);
+
+  eax = 9;
+  asm ("cpuid" : "+a" (eax) :: "ecx", "ebx", "edx");
+  bool bios_enabled_dca = (eax & 1);
+
+  return cpu_supports_dca && bios_enabled_dca;
+}
+
+bool thread_is_pinned()
+{
+  cpu_set_t *cpuset = CPU_ALLOC(128);
+
+  sched_getaffinity(getpid(), CPU_ALLOC_SIZE(128), cpuset);
+  unsigned count = 0;
+  for (unsigned i = 0; i < 128; i++)
+    count += CPU_ISSET(i, cpuset);
+
+  CPU_FREE(cpuset);
+  return count == 1;
+}
+
+uint32_t thread_apic_id()
+{
+  uint32_t eax = 1;
+  uint32_t ebx;
+
+  asm ("cpuid" : "+a" (eax), "=b" (ebx) :: "ecx", "edx");
+
+  return ebx >> 24;
+}
 
 // EOF

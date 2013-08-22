@@ -77,4 +77,8 @@ std::vector<std::string> string_split(std::string const &str, char delimiter);
 std::string demangle(const char *name);
 std::string hexdump(const void *p, unsigned len);
 
+bool     system_supports_dca();
+bool     thread_is_pinned();
+uint32_t thread_apic_id();
+
 // EOF

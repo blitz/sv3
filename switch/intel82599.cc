@@ -81,6 +81,7 @@ namespace Switch {
 
     I99_REG(RTTDCS,   0x4900),
 
+    I99_REG(DCA_CTRL,    0x11074),
     I99_REG(DCA_RXCTRL0, 0x100C),
     I99_REG(DCA_TXCTRL0, 0x600C),
 
@@ -156,6 +157,13 @@ namespace Switch {
 
     RTTDCS_ARBDIS         = (1U << 6),
 
+    DCA_CTRL_DCA_DIS       = (1U << 0),
+    DCA_CTRL_MODE_10       = (1U << 1),
+    DCA_RXCTRL_DESC_DCA_EN = (1U << 5),
+    DCA_RXCTRL_HEAD_DCA_EN = (1U << 6),
+    DCA_RXCTRL_DATA_DCA_EN = (1U << 7),
+    DCA_RXCTRL_CPU_SHIFT   = 24,
+
     DCA_RXCTRL_DESC_RRO_EN = (1U << 9),
     DCA_RXCTRL_DATA_RRO_EN = (1U << 13),
     DCA_RXCTRL_HEAD_RRO_EN = (1U << 15),
@@ -163,6 +171,8 @@ namespace Switch {
     DCA_TXCTRL_DESC_RRO_EN = (1U << 9),
     DCA_TXCTRL_WB_RRO_EN   = (1U << 11),
     DCA_TXCTRL_DATA_RRO_EN = (1U << 13),
+    DCA_TXCTRL_DESC_DCA_EN = (1U << 5),
+    DCA_TXCTRL_CPU_SHIFT   = 24,
 
     SECRXCTRL_SECRX_DIS   = (1U << 0),
     SECRXSTAT_SECRX_RDY   = (1U << 0),
@@ -744,6 +754,13 @@ namespace Switch {
 	logf("Registering DMA memory: %p+%zx", p, s);
 	map_memory_to_device(p, s, true, true);
       });
+
+    if (thread_is_pinned()) {
+      logf("Pinned at %u!", thread_apic_id());
+      logf("DCA is %s.", system_supports_dca() ? "available" : "unavailable");
+    } else {
+      logf("NOT pinned. DCA not possible.");
+    }
 
     logf("Resetting device.");
     reset();
