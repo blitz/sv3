@@ -2,8 +2,9 @@ A userspace switch for virtual machines.
 
 * Prerequisites
 
-  sv3 currently only supports Linux with Qemu/KVM as virtualization layer. It also needs
-  a relatively recent kernel. Anything 3.x-ish should be okay.
+  sv3 currently only supports Linux on x86-64 with Qemu/KVM as
+  virtualization layer. It also needs a relatively recent kernel, at
+  least 3.6, but it hasn't been tested with anything older than 3.9.
 
 * Building
 
@@ -47,16 +48,18 @@ qemu-system-x86_64 -mem-path /tmp -net none -device externalpci,socket=/tmp/sv3 
 
    By default, the switch is not connected to the outside world. You
    need an upstream port to do this. sv3 is able to drive network
-   cards itself, but needs some preparation.
+   cards itself, but needs some preparation. Currently, sv3 can drive
+   a single upstream port at a time.
 
    If the PCI ID of the desired network card is 0000:02:00.1 and the
-   user that runs the switch is john, use vfio-rebind.sh like this:
+   user that runs the switch is john, use =scripts/vfio-rebind.sh= like
+   this:
 
 #+BEGIN_SRC sh
 sudo ./scripts/vfio-rebind.sh 0000:02:00.1 john
 #+END_SRC
 
-   This will unload the device's driver and attach it to vfio with
+   This will unload the device's driver and attach it to VFIO with
    access rights for john. The script might tell you to rebind unrelated devices
    as well to make the IOMMU happy.
 
@@ -68,4 +71,4 @@ sudo ./scripts/vfio-rebind.sh 0000:02:00.1 john
  - The switch will segfault, if passed file descriptors point to files that are too short.
  - The switch sometimes segfaults when clients disappear unexpectedly.
 
-   #  L4 checksums are wrong in the presence of option headers. But this code is not used right now.
+#  L4 checksums are wrong in the presence of option headers. But this code is not used right now.
