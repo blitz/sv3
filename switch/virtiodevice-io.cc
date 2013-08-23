@@ -83,7 +83,15 @@ namespace Switch {
 	  dst_ptr += chunk;
 	  src_ptr += chunk;
 
-	  dst_hdr->flags = (src_hdr->flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
+	  // XXX The source port needs to translate header! In this
+	  // case virtiodevice needs to translate
+	  // VIRTIO_NET_HDR_F_NEEDS_CSUM into
+	  // VIRTIO_NET_HDR_F_DATA_VALID. intel82599 does this
+	  // correctly by synthesizing a new virtio header in poll()!
+	  // Seeing VIRTIO_NET_HDR_F_NEEDS_CSUM here should be
+	  // considered a bug!
+	  dst_hdr->flags = (src_hdr->flags & (VIRTIO_NET_HDR_F_NEEDS_CSUM | VIRTIO_NET_HDR_F_DATA_VALID))
+ 	  ? VIRTIO_NET_HDR_F_DATA_VALID : 0;
 
 	  // We'll update this later. Don't know how many yet.
 	  num_buffers = &dst_hdr->num_buffers;

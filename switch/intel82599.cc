@@ -194,6 +194,12 @@ namespace Switch {
     RXDESC_LO_ERROR_L4E     = (1ULL << (10 + 20)),
     RXDESC_LO_ERROR_RXE     = (1ULL << (9 + 20)),
 
+    RXDESC_HI_PACKET_TYPE_IPV4  = (1ULL << (0 + 4)),
+    RXDESC_HI_PACKET_TYPE_IPV4E = (1ULL << (1 + 4)),
+    RXDESC_HI_PACKET_TYPE_IPV6  = (1ULL << (2 + 4)),
+    RXDESC_HI_PACKET_TYPE_IPV6E = (1ULL << (3 + 4)),
+    RXDESC_HI_PACKET_TYPE_TCP   = (1ULL << (4 + 4)),
+    RXDESC_HI_PACKET_TYPE_UDP   = (1ULL << (5 + 4)),
 
     TXDESC_LO_DTYP_ADV_DTA = (3ULL << 20),
     TXDESC_LO_DTYP_ADV_CTX = (2ULL << 20),
@@ -601,21 +607,41 @@ namespace Switch {
       if (not (rx.lo & RXDESC_LO_DD))
 	break;
 
-      // logf("RX %s %016llx %016llx", (rx.lo & RXDESC_LO_EOP) ? "EOP" : "   ",
-      //  	   rx.hi, rx.lo);
+      unsigned rsccnt = (rx.hi & RXDESC_HI_RSCCNT_MASK) >> RXDESC_HI_RSCCNT_SHIFT;
+
+      // It's not clear whether rsccnt is always supposed to be != 0
+      // for every descriptor belonging to a large receive. For very
+      // large receives (>32KB) it seems to happen that it is zero in
+      // one of the middle descriptors?
+
+      // XXX In this case we just use the next descriptor. This is
+      // usually correct, but may be wrong with multiple large
+      // receives in progress. And nextp seems to be valid even in
+      // this case. So better remember whether the first packet had
+      // RSCCNT set and then just ignore it. XXX
+
+      unsigned nextp  = (rsccnt == 0) ?
+	advance_qp(_shadow_rdh0) : ((rx.lo & RXDESC_LO_NEXTP_MASK) >> RXDESC_LO_NEXTP_SHIFT);
+
+      _rx_buffers[_shadow_rdh0].rsc_count     += rsccnt - 1;
+
+      // logf("RX %04u:%04u next %04u %s %016llx %016llx packet_length %u -> %lu",
+      // 	   _shadow_rdh0, _shadow_rdt0, nextp,
+      // 	   (rx.lo & RXDESC_LO_EOP) ? "EOP" : "   ",
+      //  	   rx.hi, rx.lo,
+      // 	   _rx_buffers[_shadow_rdh0].packet_length,
+      // 	   _rx_buffers[_shadow_rdh0].packet_length + ((rx.lo & RXDESC_LO_PKT_LEN_MASK) >> RXDESC_LO_PKT_LEN_SHIFT));
+
+      _rx_buffers[_shadow_rdh0].packet_length += (rx.lo & RXDESC_LO_PKT_LEN_MASK) >> RXDESC_LO_PKT_LEN_SHIFT;
 
       if (rx.lo & RXDESC_LO_EOP)
 	goto packet_eop;
 
-      unsigned rsccnt = (rx.hi & RXDESC_HI_RSCCNT_MASK) >> RXDESC_HI_RSCCNT_SHIFT;
-      unsigned nextp  = (rsccnt == 0) ?
-	advance_qp(_shadow_rdt0) : ((rx.lo & RXDESC_LO_NEXTP_MASK) >> RXDESC_LO_NEXTP_SHIFT);
-
-      // logf("   RSCCNT %02u NEXTP %04u", rsccnt, nextp);
-
-      _rx_buffers[nextp].not_first  = true;
-      _rx_buffers[nextp].rsc_last   = _shadow_rdh0;
-      _rx_buffers[nextp].rsc_number = _rx_buffers[_shadow_rdh0].rsc_number + 1;
+      _rx_buffers[nextp].not_first     = true;
+      _rx_buffers[nextp].rsc_last      = _shadow_rdh0;
+      _rx_buffers[nextp].rsc_number    = _rx_buffers[_shadow_rdh0].rsc_number + 1;
+      _rx_buffers[nextp].rsc_count     = _rx_buffers[_shadow_rdh0].rsc_count;
+      _rx_buffers[nextp].packet_length = _rx_buffers[_shadow_rdh0].packet_length;
 
       _shadow_rdh0 = advance_qp(_shadow_rdh0);
     }
@@ -631,17 +657,46 @@ namespace Switch {
     // Construct a virtio header first.
     p.fragments = 1;
     p.fragment_length[0] = sizeof(last_info.hdr);
-    p.packet_length      = sizeof(last_info.hdr);
+    p.packet_length      = sizeof(last_info.hdr) + last_info.packet_length;
     p.fragment[0]        = (uint8_t *)&last_info.hdr;
 
     memset(&last_info.hdr, 0, sizeof(last_info.hdr));
 
+
+    assert(last_info.rsc_count != 0);
+
+    // We can correctly set GSO stuff here. But I have no idea what
+    // for or if this is used in Linux.
+
+    // bool ipv4 = rx.hi & (RXDESC_HI_PACKET_TYPE_IPV4 | RXDESC_HI_PACKET_TYPE_IPV4E);
+    // bool ipv6 = rx.hi & (RXDESC_HI_PACKET_TYPE_IPV6 | RXDESC_HI_PACKET_TYPE_IPV6E);
+    // bool tcp  = rx.hi &  RXDESC_HI_PACKET_TYPE_TCP;
+    // bool udp  = rx.hi &  RXDESC_HI_PACKET_TYPE_UDP;
+    // last_info.hdr.gso_type = VIRTIO_NET_HDR_GSO_NONE;
+    // if (last_info.rsc_count > 0) {
+    //   if (tcp) {
+    // 	if (ipv4) {
+    //       #warning This is guessed! Need to look in the header.
+    // 	  last_info.hdr.gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
+    // 	  last_info.hdr.hdr_len = sizeof(Ethernet::Header) + sizeof(IPv4::Header) + sizeof(TCP::Header);
+    // 	} else if (ipv6) {
+    // 	  last_info.hdr.gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
+    // 	  last_info.hdr.hdr_len = sizeof(Ethernet::Header) + sizeof(IPv6::Header) + sizeof(TCP::Header);
+    // 	}
+    //   }
+    //   if (last_info.hdr.gso_type != VIRTIO_NET_HDR_GSO_NONE)
+    // 	last_info.hdr.gso_size = (last_info.packet_length + last_info.hdr.hdr_len + last_info.rsc_count - 1) / last_info.rsc_count;
+    // }
+
     // Inform the guest that checksums are valid, if the NIC has seen
     // a correct L4 checksum. Chicken out, if the hardware has seen a
     // broken IPv4 header.
-    if ((rx.lo & RXDESC_LO_STATUS_L4I) and (rx.lo & RXDESC_LO_ERROR_L4E)
-        and (not (rx.lo & RXDESC_LO_STATUS_IPCS) or (rx.lo & RXDESC_LO_ERROR_IPE)))
+    if ((rx.lo & RXDESC_LO_STATUS_L4I) and not (rx.lo & RXDESC_LO_ERROR_L4E)
+        and (not (rx.lo & RXDESC_LO_STATUS_IPCS) or not (rx.lo & RXDESC_LO_ERROR_IPE)))
       last_info.hdr.flags = VIRTIO_NET_HDR_F_DATA_VALID;
+
+    // XXX There seems to be an errata about udp packets with zero
+    // checksum. See Linux code: ixgbe_main.c
     
     unsigned fragments = 1 + _rx_buffers[_shadow_rdh0].rsc_number;
     p.fragments        = 1 + fragments;
@@ -658,11 +713,11 @@ namespace Switch {
 
       unsigned flen = (desc.lo & RXDESC_LO_PKT_LEN_MASK) >> RXDESC_LO_PKT_LEN_SHIFT;
 
-      p.packet_length            += flen;
       p.fragment_length[cur_frag] = flen;
       p.fragment[cur_frag]        = info.buffer->data;
 
-      // logf("Fragment %02u: %p+%x idx %u", cur_frag, info.buffer->data, flen, cur_idx);
+      // logf("Fragment %02u: %p+%x idx %u->%u num %u cnt %d", cur_frag, info.buffer->data, flen,
+      // 	   cur_idx, info.rsc_last, info.rsc_number, info.rsc_count);
 
       // First fragment has not_first == false.
       assert(cur_frag != 0 or not info.not_first);

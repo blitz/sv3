@@ -134,7 +134,13 @@ namespace Switch {
       uint16_t   rsc_last;
 
       // How many buffers do we have until now not including this?
-      uint16_t   rsc_number;
+      uint8_t    rsc_number;
+
+      // How many packets has the hardware merged? Negative for
+      // non-RSC packets.
+      int8_t     rsc_count;
+
+      uint32_t   packet_length;
     } _rx_buffers[QUEUE_LEN];
 
     // Information for cleaning TX buffers
