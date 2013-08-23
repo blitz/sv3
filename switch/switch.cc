@@ -23,12 +23,12 @@
 
 namespace Switch {
 
-  void Switch::logf(std::string str, ...)
+  void Switch::logf(char const *str, ...)
   {
     va_list  ap;
     va_start(ap, str);
     printf("%10s: ", "switch");
-    vprintf(str.c_str(), ap);
+    vprintf(str, ap);
     puts("");
     va_end(ap);
   }

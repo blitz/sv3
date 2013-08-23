@@ -566,12 +566,8 @@ namespace Switch {
     assert(_shadow_tdt0 == _reg[TDT0]);
 
     if (UNLIKELY(enable_notifications)) {
-      // logf("Unmasking RX/TX IRQ. EICR %08x\n"
-      // 	   "T %u:%u OUR %u:%u (wb %u)\n"
-      // 	   "room %u inflight %u",
-      // 	   _reg[EICR],
-      // 	   _reg[TDH0], _reg[TDT0], _shadow_tdh0, _shadow_tdt0, *_tx_writeback,
-      // 	   tx_has_room(), tx_inflight);
+      // logf("Unmasking RX/TX IRQ. EICR %08x EIMS %08x",
+      // 	   _reg[EICR], _reg[EIMS]);
       unmask_rxtx_irq();
     }
 
@@ -764,7 +760,7 @@ namespace Switch {
     logf("IRQ thread is up.");
 
     while ((res = read(misc_event_fd(), &v, sizeof(v))) == sizeof(v)) {
-      logf(status());
+      logf("%s", status().c_str());
 
       unmask_misc_irq();
     }

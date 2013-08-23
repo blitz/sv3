@@ -387,7 +387,7 @@ namespace Switch {
         val = vq[queue_sel].vector;
       break;
     default:
-      logf("Unimplemented register %x read.", addr);
+      logf("Unimplemented register %zx read.", size_t(addr));
       break;
     }
 
@@ -513,7 +513,7 @@ namespace Switch {
       }
 
       if (val >= MSIX_VECTORS) {
-        logf("Guest configured non-existent MSI-X vector %u.", val);
+        logf("Guest configured non-existent MSI-X vector %zu.", size_t(val));
         break;
       }
 
@@ -523,7 +523,7 @@ namespace Switch {
       break;
 
     default:
-      logf("Unimplemented register %x.", addr);
+      logf("Unimplemented register %zx.", size_t(addr));
       break;
     }
     // logf("io write %04" PRIx64 "+%x <- %" PRIx64, addr, size, val);

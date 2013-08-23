@@ -18,12 +18,12 @@
 
 namespace Switch {
 
-  void Port::logf(std::string str, ...)
+  void Port::logf(char const *str, ...)
   {
     va_list  ap;
     va_start(ap, str);
     printf("%10s: ", _name.c_str());
-    vprintf(str.c_str(), ap);
+    vprintf(str, ap);
     puts("");
     va_end(ap);
   }

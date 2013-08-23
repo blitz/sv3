@@ -44,7 +44,7 @@ namespace Switch {
     std::string const name() const { return _name; }
 
     /// Log a message.
-    void logf(std::string str, ...);
+    void logf(char const *str, ...) __attribute__((format (printf,2,3)));
 
     /// Receive a packet.
     virtual void receive(Packet &p) = 0;
@@ -155,7 +155,7 @@ namespace Switch {
 
     std::list<Port *> const &ports() const { return *_ports; }
 
-    void logf(std::string str, ...);
+    void logf(char const *, ...) __attribute__((format (printf,2,3)));
 
     void loop();
     void attach_port(Port &p);
