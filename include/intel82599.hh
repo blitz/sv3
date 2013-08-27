@@ -116,31 +116,36 @@ namespace Switch {
 
 
     // Remembers which buffer we stored in an RX queue entry.
-    struct {
+    struct rx_info {
       rx_buffer *buffer;
-
-      // We need space to construct a header. Here is as good as any.
-      virtio_net_hdr_mrg_rxbuf hdr;
 
       // 82599's buffer chaining for LRO is weird. We need to remember
       // where our buffer chain started.
 
-      // False if this is the first packet in a chain. This is stored
-      // as a complemented value to be able to easily initialize
-      // everything with zero.
-      bool       not_first;
+      enum {
+	// Set for every packet in a packet chain except the first
+	// packet.
+	FLAGS_NOT_FIRST = (1 << 0),
 
-      // Index of previous buffer.
-      uint16_t   rsc_last;
+	// Set for packets that are large receives. If this is set, we
+	// have to honor the NEXTP pointer.
+	FLAGS_RSC       = (1 << 1),
+      };
+
+      uint8_t    flags;
 
       // How many buffers do we have until now not including this?
       uint8_t    rsc_number;
 
-      // How many packets has the hardware merged? Negative for
-      // non-RSC packets.
-      int8_t     rsc_count;
+      // Index of previous buffer.
+      uint16_t   rsc_last;
 
+      // Total packet length. We store this in order to avoid another
+      // pass over the descriptor chain.
       uint32_t   packet_length;
+
+      // We need space to construct a header. Here is as good as any.
+      virtio_net_hdr_mrg_rxbuf hdr;
     } _rx_buffers[QUEUE_LEN];
 
     // Information for cleaning TX buffers

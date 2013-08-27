@@ -611,38 +611,24 @@ namespace Switch {
 
       unsigned rsccnt = (rx.hi & RXDESC_HI_RSCCNT_MASK) >> RXDESC_HI_RSCCNT_SHIFT;
 
-      // It's not clear whether rsccnt is always supposed to be != 0
-      // for every descriptor belonging to a large receive. For very
-      // large receives (>32KB) it seems to happen that it is zero in
-      // one of the middle descriptors?
+      // If this is the first packet, we check RSCCNT and remember the
+      // result for all packets in the chain.
+      if (not (_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_NOT_FIRST) and rsccnt)
+	_rx_buffers[_shadow_rdh0].flags |= rx_info::FLAGS_RSC;
+      else
+	assert((_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_RSC) and rsccnt);
 
-      // XXX In this case we just use the next descriptor. This is
-      // usually correct, but may be wrong with multiple large
-      // receives in progress. And nextp seems to be valid even in
-      // this case. So better remember whether the first packet had
-      // RSCCNT set and then just ignore it. XXX
-
-      unsigned nextp  = (rsccnt == 0) ?
-	advance_qp(_shadow_rdh0) : ((rx.lo & RXDESC_LO_NEXTP_MASK) >> RXDESC_LO_NEXTP_SHIFT);
-
-      _rx_buffers[_shadow_rdh0].rsc_count     += rsccnt - 1;
-
-      // logf("RX %04u:%04u next %04u %s %016llx %016llx packet_length %u -> %lu",
-      // 	   _shadow_rdh0, _shadow_rdt0, nextp,
-      // 	   (rx.lo & RXDESC_LO_EOP) ? "EOP" : "   ",
-      //  	   rx.hi, rx.lo,
-      // 	   _rx_buffers[_shadow_rdh0].packet_length,
-      // 	   _rx_buffers[_shadow_rdh0].packet_length + ((rx.lo & RXDESC_LO_PKT_LEN_MASK) >> RXDESC_LO_PKT_LEN_SHIFT));
+      unsigned nextp  = (_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_RSC) ?
+	((rx.lo & RXDESC_LO_NEXTP_MASK) >> RXDESC_LO_NEXTP_SHIFT) : advance_qp(_shadow_rdh0);
 
       _rx_buffers[_shadow_rdh0].packet_length += (rx.lo & RXDESC_LO_PKT_LEN_MASK) >> RXDESC_LO_PKT_LEN_SHIFT;
 
       if (rx.lo & RXDESC_LO_EOP)
 	goto packet_eop;
 
-      _rx_buffers[nextp].not_first     = true;
+      _rx_buffers[nextp].flags         = rx_info::FLAGS_NOT_FIRST | _rx_buffers[_shadow_rdh0].flags;
       _rx_buffers[nextp].rsc_last      = _shadow_rdh0;
       _rx_buffers[nextp].rsc_number    = _rx_buffers[_shadow_rdh0].rsc_number + 1;
-      _rx_buffers[nextp].rsc_count     = _rx_buffers[_shadow_rdh0].rsc_count;
       _rx_buffers[nextp].packet_length = _rx_buffers[_shadow_rdh0].packet_length;
 
       _shadow_rdh0 = advance_qp(_shadow_rdh0);
@@ -663,9 +649,6 @@ namespace Switch {
     p.fragment[0]        = (uint8_t *)&last_info.hdr;
 
     memset(&last_info.hdr, 0, sizeof(last_info.hdr));
-
-
-    assert(last_info.rsc_count != 0);
 
     // We can correctly set GSO stuff here. But I have no idea what
     // for or if this is used in Linux.
@@ -722,7 +705,7 @@ namespace Switch {
       // 	   cur_idx, info.rsc_last, info.rsc_number, info.rsc_count);
 
       // First fragment has not_first == false.
-      assert(cur_frag != 0 or not info.not_first);
+      assert(cur_frag != 0 or not (info.flags & rx_info::FLAGS_NOT_FIRST));
       cur_idx = info.rsc_last;
     }
 
@@ -740,7 +723,7 @@ namespace Switch {
       unsigned   next_idx = _rx_buffers[idx].rsc_last;
       rx_buffer *buf      = _rx_buffers[idx].buffer;
 
-      not_first = _rx_buffers[idx].not_first;
+      not_first = _rx_buffers[idx].flags & rx_info::FLAGS_NOT_FIRST;
 
       memset(&_rx_buffers[idx],          0, sizeof(_rx_buffers[0]));
 
