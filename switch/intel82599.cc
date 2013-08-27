@@ -597,8 +597,14 @@ namespace Switch {
 
     desc rx;
     while (LIKELY(_shadow_rdh0 != _shadow_rdt0)) {
-      rx.hi = __atomic_load_n(&_rx_desc[_shadow_rdh0].hi, __ATOMIC_ACQUIRE);
+
+      // It seems descriptors are not written back atomically by the
+      // NIC, but first hi then lo. Since lo contains the descriptor
+      // done bit (DD), we have to make sure to read it in first,
+      // otherwise we race with the NIC and see garbage rx.hi values.
+
       rx.lo = __atomic_load_n(&_rx_desc[_shadow_rdh0].lo, __ATOMIC_ACQUIRE);
+      rx.hi = __atomic_load_n(&_rx_desc[_shadow_rdh0].hi, __ATOMIC_ACQUIRE);
 
       if (not (rx.lo & RXDESC_LO_DD))
 	break;
