@@ -401,8 +401,8 @@ namespace Switch {
     _reg[EIMS] = 1;
   }
 
-  Intel82599::Intel82599(VfioGroup group, int fd, int rxtx_eventfd)
-    : VfioDevice(group, fd), _rxtx_eventfd(rxtx_eventfd)
+  Intel82599::Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd)
+    : VfioDevice(group, device_id, fd), _rxtx_eventfd(rxtx_eventfd)
   {
     size_t mmio_size;
     _reg = (uint32_t volatile *)map_bar(VFIO_PCI_BAR0_REGION_INDEX, &mmio_size);
@@ -565,6 +565,9 @@ namespace Switch {
   {
     assert(_shadow_tdt0 == _reg[TDT0]);
 
+    // Prefetch next RX descriptor
+    __builtin_prefetch(&_rx_desc[_shadow_rdh0], 0);
+
     if (UNLIKELY(enable_notifications)) {
       // logf("Unmasking RX/TX IRQ. EICR %08x EIMS %08x",
       // 	   _reg[EICR], _reg[EIMS]);
@@ -610,6 +613,10 @@ namespace Switch {
 
       if (not (rx.lo & RXDESC_LO_DD))
 	break;
+
+      // Prefetch header of packet
+      if (not (_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_NOT_FIRST))
+	__builtin_prefetch(_rx_buffers[_shadow_rdh0].buffer->data, 0, 1);
 
       unsigned rsccnt = (rx.hi & RXDESC_HI_RSCCNT_MASK) >> RXDESC_HI_RSCCNT_SHIFT;
 
@@ -784,29 +791,32 @@ namespace Switch {
     return r;
   }
 
-  Intel82599Port::Intel82599Port(VfioGroup group, int fd,
+  Intel82599Port::Intel82599Port(VfioGroup group, std::string device_id, int fd,
                                  Switch &sw, std::string name)
-    : Intel82599(group, fd, sw.event_fd()),
+    : Intel82599(group, device_id, fd, sw.event_fd()),
       Port(sw, name),
       _misc_thread(&Intel82599Port::misc_thread_fn, this),
       _shadow_rdt0(0), _shadow_rdh0(0),
       _shadow_tdt0(0), _shadow_tdh0(0), _tx0_inflight(0)
   {
-
     _switch.register_dma_memory_callback([&] (void *p, size_t s) {
 	logf("Registering DMA memory: %p+%zx", p, s);
 	map_memory_to_device(p, s, true, true);
       });
 
+    logf("Resetting device.");
+    reset();
+
     if (thread_is_pinned()) {
       logf("Pinned at %u!", thread_apic_id());
       logf("DCA is %s.", system_supports_dca() ? "available" : "unavailable");
+
+      for (unsigned irq : irqs())
+        logf("XXX Don't know how to ping IRQ%u! Implement me.", irq);
+
     } else {
       logf("NOT pinned. DCA not possible.");
     }
-
-    logf("Resetting device.");
-    reset();
 
     memset(_rx_buffers, 0, sizeof(_rx_buffers));
     memset(_tx_buffers, 0, sizeof(_tx_buffers));

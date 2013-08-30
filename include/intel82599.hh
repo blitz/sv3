@@ -85,7 +85,7 @@ namespace Switch {
     std::string status();
     void        reset();
 
-    Intel82599(VfioGroup group, int fd, int rxtx_eventfd);
+    Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd);
   };
 
   class Intel82599Port : public Intel82599,
@@ -177,7 +177,7 @@ namespace Switch {
     bool poll(Packet &p, bool enable_notifications) override;
     void mark_done(Packet::CompletionInfo &p) override;
 
-    Intel82599Port(VfioGroup group, int fd,
+    Intel82599Port(VfioGroup group, std::string device_id, int fd,
 		   Switch &sw, std::string name);
 
   };

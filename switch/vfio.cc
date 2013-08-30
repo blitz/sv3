@@ -16,9 +16,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <boost/format.hpp>
 
 #include <compiler.h>
 #include <vfio.hh>
+#include <util.hh>
 
 namespace Switch {
 
@@ -77,8 +81,8 @@ namespace Switch {
 
   // VfioDevice
 
-  VfioDevice::VfioDevice(VfioGroup group, int fd)
-    : _group(group), _device(fd)
+  VfioDevice::VfioDevice(VfioGroup group, std::string device_id, int fd)
+    : _group(group), _device_id(device_id), _device(fd)
   {
     struct vfio_device_info device_info = { .argsz = sizeof(device_info) };
 
@@ -166,6 +170,41 @@ namespace Switch {
       throw SystemError("Mapping BAR %u of VFIO device failed.", bar);
 
     return res;
+  }
+
+  /// We have to figure out which IRQ numbers we got by looking into sysfs.
+  VfioDevice::irq_list VfioDevice::irqs()
+  {
+    irq_list l;
+
+    std::stringstream ss;
+    ss << boost::format("/sys/bus/pci/devices/%s/msi_irqs") % _device_id;
+
+    DIR *dir = opendir(ss.str().c_str());
+    if (dir == nullptr)
+      throw SystemError("opendir %s", ss.str().c_str());
+
+    auto closure = [&] () { closedir(dir); };
+    Finally<decltype(closure)> when_done(closure);
+
+    dirent ent;
+    dirent *cur = nullptr;
+    int res;
+
+    while (((res = readdir_r(dir, &ent, &cur)) == 0) and cur != nullptr) {
+      if (strcmp(".", cur->d_name) == 0 or
+          strcmp("..", cur->d_name) == 0)
+        continue;
+
+      l.push_back(std::stoul(cur->d_name));
+    }
+    
+    if (res != 0) {
+      errno = res;
+      throw SystemError("readdir");
+    }
+
+    return l;
   }
 
 }
