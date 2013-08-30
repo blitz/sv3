@@ -14,42 +14,69 @@ import csv
 import argparse
 import random
 
+# Local "libraries"
 import topology
 import cgroup
+import pci
+
+# XXX TODO Interrupt affinity
 
 def thread_list_to_str(tl):
     return ",".join([str(t.id) for t in tl])
 
-net_if    = "eth0"
+# Connection to remote machine that will be our load generator
+# loadgen = e.spawn("ssh testuser@cosel")
+
+# Network interface on the load generator that is connected to our local NIC
+# loadgen_net_if = "ix0"
+
+# The PCI ID of our network device. We need this to bind it to VFIO.
+net_if_pciid  = '0000:02:00.1'
+
+# Original driver. We need this to reattach the driver after the
+# benchmark run.
+net_if_driver = 'ixgbe'
+
+# This is only used for vhost benchmarks. We attach macvtap interfaces
+# to this external NIC.
+net_if    = "p33p2"
+
+# Load modules
+if os.system("modprobe vhost-net") != 0:
+    print("Couldn't load vhost-net?")
+    exit(1)
+
+# Remove vfio-pci driver. This frees up all devices it has bound to
+# it. We can attach the original network drivers without problems.
+if pci.driver_exists("vfio-pci") and os.system("rmmod vfio-pci") != 0:
+    print("Couldn't unload vfio-pci?")
+    exit(1)
+
+cur_driver = pci.get_driver(net_if_pciid)
+if cur_driver != net_if_driver:
+    print("Rebinding NIC to original kernel driver.")
+    pci.bind(net_if_driver, net_if_pciid)
+
+        
 qemu_bin  = "../contrib/qemu/x86_64-softmmu/qemu-system-x86_64"
 linux_bin = "../contrib/buildroot/buildroot/output/images/bzImage"
-qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -append loglevel=3\ quiet\ console=ttyS0\ clocksource=tsc"
+qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -append loglevel=0\ quiet\ console=ttyS0\ clocksource=tsc"
 
 all_cgroups = ["js-switch", "js-server", "js-client"]
 
 def check_setup():
-    try:
-        scaling_governor =  open("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").read()
-        if scaling_governor != "performance\n":
-            print("CPU frequency scaling in effect! Scaling governor is set to: " + scaling_governor, end="")
-            exit(1)
-        else:
-            print("CPU frequency scaling is set to performance. Good.")
-    except IOError as e:
-        print("Could not check your frequency scaling settings!")
-        print(str(e))
+    for cpu in os.listdir("/sys/devices/system/cpu"):
+        gov = ("/sys/devices/system/cpu/%s/cpufreq/scaling_governor" % cpu)
+        if os.path.exists(gov):
+            with open(gov, "a+") as c:
+                old = c.read().strip()
+                new = "performance"
+                c.write(new)
+                if old != new:
+                    print("%s: %s -> performance" % (cpu, old))
     
     if not os.path.exists(qemu_bin):
         print("Qemu not found at: " + qemu_bin)
-        exit(1)
-
-    try:
-        with open('/dev/vhost-net'): pass
-    except IOError as e:
-        print(str(e))
-        print("Is the vhost_net module loaded?")
-        print("If it is a permission problem, add yourself to the kvm group and add this udev rule:")
-        print(' SUBSYSTEM=="misc", KERNEL=="vhost-net", GROUP="kvm", MODE="0660"')
         exit(1)
 
 class StdDev:
@@ -136,21 +163,16 @@ def netperf_stream_like(client, test):
 def clear_line():
     print("[2K\r", end="")
 
-def account(user_list, sys_list, start, end, elapsed):
-    (cpu_user, cpu_sys) = cgroup.CpuUsage.delta(start, end, elapsed)
-    user_list.append(cpu_user)
-    sys_list.append(cpu_sys)
+def account(cpu_list, start, end, elapsed):
+    cpu_list.append(cgroup.CpuUsage.delta(start, end, elapsed))
 
 import pdb    
 
 def repeat_benchmark(results, name, repeat, thunk):
     bench_results   = [name + "_res"]
-    switch_user = [name + "_switch_user"]
-    switch_sys  = [name + "_switch_sys"]
-    client_user = [name + "_client_user"]
-    client_sys  = [name + "_client_sys"]
-    server_user = [name + "_server_user"]
-    server_sys  = [name + "_server_sys"]
+    switch_cpu = [name + "_switch_cpu"]
+    client_cpu = [name + "_client_cpu"]
+    server_cpu = [name + "_server_cpu"]
 
     stddev_gen = StdDev()
     for i in range(repeat):
@@ -164,9 +186,9 @@ def repeat_benchmark(results, name, repeat, thunk):
         elapsed_time = time.time() - start_time
         end_usage   = dict([ (cg, cgroup.cgget_usage(cg)) for cg in all_cgroups ])
 
-        account(switch_user, switch_sys, start_usage["js-switch"], end_usage["js-switch"], elapsed_time)
-        account(client_user, client_sys, start_usage["js-client"], end_usage["js-client"], elapsed_time)
-        account(server_user, server_sys, start_usage["js-server"], end_usage["js-server"], elapsed_time)
+        account(switch_cpu, start_usage["js-switch"], end_usage["js-switch"], elapsed_time)
+        account(client_cpu, start_usage["js-client"], end_usage["js-client"], elapsed_time)
+        account(server_cpu, start_usage["js-server"], end_usage["js-server"], elapsed_time)
 
         stddev_gen.update(v)
         bench_results.append(v)
@@ -190,8 +212,8 @@ def run_benchmark(prefix, client, server):
     results = []
     repeat_benchmark(results, prefix + "_udp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "UDP_RR"))
     #repeat_benchmark(results, prefix + "_tcp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_RR"))
-    repeat_benchmark(results, prefix + "_tcp_cc",  repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CC"))
-    repeat_benchmark(results, prefix + "_tcp_crr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CRR"))
+    # repeat_benchmark(results, prefix + "_tcp_cc",  repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CC"))
+    # repeat_benchmark(results, prefix + "_tcp_crr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CRR"))
 
     set_tso(client, True)
     set_tso(server, True)
@@ -246,23 +268,19 @@ class CommandFailed(BaseException):
 def create_macvtap(netif, macvtap, mac):
     """Create a macvtap devices connected to netif. Returns the name of the 
     corresponding tap device."""
-    output, ex = e.run("sudo ip link add link %s name %s address %s type macvtap mode bridge" % (netif, macvtap, mac),
+    output, ex = e.run("ip link add link %s name %s address %s type macvtap mode bridge" % (netif, macvtap, mac),
                        withexitstatus = True)
     if ex != 0:
         print(("Creating '%s' failed:" % macvtap) + output, end="")
         raise CommandFailed()
-    e.run("sudo ip link set dev %s up" % macvtap)
+    e.run("ip link set dev %s up" % macvtap)
     tap_files = glob.glob("/sys/class/net/%s/tap*" % macvtap)
     assert len(tap_files) == 1
     devnode = "/dev/" + os.path.basename(tap_files[0])
-    print(e.run("ls -l %s" % devnode), end="")
-    print("If it looks like you don't have permissions to access this, use this udev rule:")
-    print('SUBSYSTEM=="macvtap", GROUP="kvm", MODE="0660"')
-    time.sleep(1)
     return devnode
 
 def delete_macvtap(macvtap):
-    e.run("sudo ip link delete %s type macvtap" % macvtap)
+    e.run("ip link delete %s type macvtap" % macvtap)
 
 def run_vhost_benchmark(server_cpus, client_cpus):
     print("\n--- vhost ---")
@@ -338,8 +356,8 @@ def main(args):
 
     write_csv("results-vhost-%s.csv" % dstr, run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus))
 
-    poll_v  = range(0,50,2) 
-    batch_v = range(0,60,4)[1:]
+    poll_v  = [0, 5, 10, 50, 100, 1000]
+    batch_v = [1, 16, 32]
 
     experiments = [ x for x in itertools.product(poll_v, batch_v)]
     random.shuffle(experiments)

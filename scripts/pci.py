@@ -6,8 +6,14 @@ import struct
 def readlink_base(name):
     return os.path.basename(os.readlink(name))
 
+def driver_exists(driver):
+    return os.path.exists("/sys/bus/pci/drivers/%s" % driver)
+
 def get_driver(pciid):
-    return readlink_base("/sys/bus/pci/devices/%s/driver" % pciid)
+    if os.path.exists("/sys/bus/pci/devices/%s/driver" % pciid):
+        return readlink_base("/sys/bus/pci/devices/%s/driver" % pciid)
+    else:
+        return None
 
 def get_iommu_group(pciid):
     return readlink_base("/sys/bus/pci/devices/%s/iommu_group" % pciid)
@@ -27,7 +33,7 @@ def device_config(pciid):
 
 def unbind(pciid):
     """Unbind a PCI device from its device driver."""
-    if os.path.exists("/sys/bus/pci/devices/%s/driver" % pciid):
+    if get_driver(pciid):
         with open("/sys/bus/pci/devices/%s/driver/unbind" % pciid, "w") as u:
             u.write(pciid)
 
