@@ -30,7 +30,7 @@ class CpuUsage:
         return "<CPU %.2fs>" % (self.cpu)
 
     def __init__(self, cpu):
-        self.user = cpu
+        self.cpu = cpu
 
 def cgget_usage(name):
     with open('/sys/fs/cgroup/cpuacct/%s/cpuacct.usage' % name, 'r') as s:

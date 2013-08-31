@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
+import time
 import datetime
 import os
 import sys
-import math
 import glob
 import itertools
 import time
@@ -13,11 +13,16 @@ import pexpect as e
 import csv
 import argparse
 import random
+import platform
+import json
+import gzip
 
 # Local "libraries"
 import topology
 import cgroup
 import pci
+import cpuutil
+from stddev import StdDev
 
 # XXX TODO Interrupt affinity
 
@@ -25,10 +30,7 @@ def thread_list_to_str(tl):
     return ",".join([str(t.id) for t in tl])
 
 # Connection to remote machine that will be our load generator
-# loadgen = e.spawn("ssh testuser@cosel")
-
-# Network interface on the load generator that is connected to our local NIC
-# loadgen_net_if = "ix0"
+loadgen = e.spawn("ssh testuser@cosel")
 
 # The PCI ID of our network device. We need this to bind it to VFIO.
 net_if_pciid  = '0000:02:00.1'
@@ -60,7 +62,7 @@ if cur_driver != net_if_driver:
         
 qemu_bin  = "../contrib/qemu/x86_64-softmmu/qemu-system-x86_64"
 linux_bin = "../contrib/buildroot/buildroot/output/images/bzImage"
-qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -append loglevel=0\ quiet\ console=ttyS0\ clocksource=tsc"
+qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -initrd ../contrib/benchcat/benchcat.cpio -append loglevel=0\ quiet\ console=ttyS0\ clocksource=tsc"
 
 all_cgroups = ["js-switch", "js-server", "js-client"]
 
@@ -79,48 +81,82 @@ def check_setup():
         print("Qemu not found at: " + qemu_bin)
         exit(1)
 
-class StdDev:
-    def update(self, value):
-        self.n      += 1
-        self.sum    += value
-        self.sum_sq += value*value
-
-    def mean(self):
-        if self.n == 0:
-            return None
-        else:
-            return self.sum / self.n
-
-    def stddev(self):
-        if self.n < 2:
-            return None
-        else:
-            n  = self.n
-            s  = self.sum
-            sq = self.sum_sq
-            return math.sqrt((sq - s*s/n)/(n-1))
-
-    def format(self):
-        res = ""
-        mean   = self.mean()
-        stddev = self.stddev()
-        if mean:
-            res += " mean=%.2f" % mean
-        if stddev:
-            er = 1.96 * stddev / math.sqrt(self.n)
-            res += "±%.2f  95%% in [%.2f,%.2f]" % (stddev, mean - er, mean + er)
-        return res
-
-    def __init__(self):
-        self.n      = 0
-        self.sum    = 0
-        self.sum_sq = 0
 
 def qemu_quit(p):
     p.sendcontrol('a')
     p.send('x')
     p.expect(e.EOF)
     p.close(force = True)
+
+def clear_line():
+    print("[2K\r", end="")
+
+
+# A list of all experiments we ran.
+experiments = []
+
+class Run:
+    def remember(self, key, value):
+        self.details[key] = value
+
+    def elapsed(self):
+        return time.time() - self.details['time_start']
+
+    def __enter__(self):
+        assert self.start_proc == None
+        clear_line()
+        print("Running %s (%d) ..." % (self.experiment.name, len(self.experiment.runs)+1), end="")
+        sys.stdout.flush()
+        self.details = {}
+        self.details['time_start'] = time.time()
+        self.start_proc = cpuutil.read_proc_stat()
+        return self
+
+    def __exit__(self, etype, value, trace):
+        if (etype):
+            return False
+        end_proc = cpuutil.read_proc_stat()
+        self.details['procstat'] = cpuutil.relative_proc(self.start_proc, end_proc)
+        self.details['time_end'] = time.time()
+        self.experiment.runs.append(self.details)
+
+        return False
+
+    def __init__(self, experiment):
+        self.experiment = experiment
+        self.start_proc = None
+
+class Experiment:
+
+    def __str__(self):
+        return "<EXP %s (%s): %s>" % (self.name, self.parameters, [i['value'] for i in self.runs])
+
+    def done(self):
+        experiments.append({'name'  : self.name,
+                            'date'  : self.date,
+                            'uname' : platform.uname(),
+                            'parameters' : self.parameters,
+                            'runs' : self.runs })
+    def run(self):
+        return Run(self)
+
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, etype, value, trace):
+        self.done()
+        duration = time.time() - self.start
+        clear_line()
+        print("Finished %s in %dmin %02ds." % (self.name, duration / 60, duration % 60))
+        print(self)
+        return False
+
+    def __init__(self, name, parameters):
+        self.name  = name
+        self.date  = time.time()
+        self.parameters = parameters
+        self.runs  = []
 
 def create_and_configure(qemu_cmd, is_server, cpus):
     print("Starting %s VM..." % ("server" if is_server else "client"))
@@ -131,7 +167,7 @@ def create_and_configure(qemu_cmd, is_server, cpus):
     p.expect_exact("buildroot login: ")
     p.sendline("root")
     p.expect("\r\n")
-    p.sendline("ifconfig eth0 up %s && echo return $?" % ("10.0.0.1" if is_server else "10.0.0.2"))
+    p.sendline("ifconfig eth0 up %s && echo return $?" % ("192.168.1.100" if is_server else "192.168.1.200"))
     r = p.expect (["return 0", "No such device"])
     if r != 0:
         print("Network configuration failed: %d" % r, file=sys.stderr)
@@ -144,7 +180,7 @@ def create_and_configure(qemu_cmd, is_server, cpus):
     return p
 
 def netperf_rr_like(client, test):
-    client.sendline("netperf -t %s -H 10.0.0.1" % test)
+    client.sendline("netperf -t %s -H 192.168.1.100" % test)
     client.expect_exact("Socket Size   Request  Resp.   Elapsed  Trans.")
     client.expect_exact("Send   Recv   Size     Size    Time     Rate")
     client.expect_exact("bytes  Bytes  bytes    bytes   secs.    per sec")
@@ -152,7 +188,7 @@ def netperf_rr_like(client, test):
     return float(client.match.group(1))
 
 def netperf_stream_like(client, test):
-    client.sendline("netperf -t %s -H 10.0.0.1" % test)
+    client.sendline("netperf -t %s -H 192.168.1.100" % test)
     client.expect_exact("Recv   Send    Send")
     client.expect_exact("Socket Socket  Message  Elapsed")
     client.expect_exact("Size   Size    Size     Time     Throughput")
@@ -160,43 +196,19 @@ def netperf_stream_like(client, test):
     client.expect(r"\d+\s+\d+\s+\d+\s+\d+\.\d+\s+(\d+\.\d+)\s*\r\n")
     return float(client.match.group(1))
 
-def clear_line():
-    print("[2K\r", end="")
+def benchcat(client, server, target_mbit, connections, active):
+    #client.sendline("benchcat ")
+    print("Benchcat benchmark not implemented yet...")
 
-def account(cpu_list, start, end, elapsed):
-    cpu_list.append(cgroup.CpuUsage.delta(start, end, elapsed))
-
-import pdb    
-
-def repeat_benchmark(results, name, repeat, thunk):
-    bench_results   = [name + "_res"]
-    switch_cpu = [name + "_switch_cpu"]
-    client_cpu = [name + "_client_cpu"]
-    server_cpu = [name + "_server_cpu"]
-
-    stddev_gen = StdDev()
-    for i in range(repeat):
-        clear_line()
-        print("Running %s (%d/%d). %s" % (name, i+1, repeat, stddev_gen.format()), end="")
-        sys.stdout.flush()
-
-        start_time  = time.time()
-        start_usage = dict([ (cg, cgroup.cgget_usage(cg)) for cg in all_cgroups ])
-        v = thunk()
-        elapsed_time = time.time() - start_time
-        end_usage   = dict([ (cg, cgroup.cgget_usage(cg)) for cg in all_cgroups ])
-
-        account(switch_cpu, start_usage["js-switch"], end_usage["js-switch"], elapsed_time)
-        account(client_cpu, start_usage["js-client"], end_usage["js-client"], elapsed_time)
-        account(server_cpu, start_usage["js-server"], end_usage["js-server"], elapsed_time)
-
-        stddev_gen.update(v)
-        bench_results.append(v)
-    clear_line()
-    print("%s: %s" % (name, stddev_gen.format()))
-
-    for r in [bench_results, switch_user, switch_sys, client_user, client_sys, server_user, server_sys]:
-        results.append(r)
+def repeat_benchmark(name, repeat, parameters, thunk):
+    with Experiment(name, parameters) as e:
+        for i in range(repeat):
+            with e.run() as run:
+                start_usage = dict([ (cg, cgroup.cgget_usage(cg)) for cg in all_cgroups ])
+                run.remember("value", thunk())
+                end_usage   = dict([ (cg, cgroup.cgget_usage(cg)) for cg in all_cgroups ])
+                for g in all_cgroups:
+                    run.remember(g + "-usage", cgroup.CpuUsage.delta(start_usage[g], end_usage[g], run.elapsed()))
 
 def set_tso(session, enable):
     on_off = "on" if enable else "off"
@@ -207,23 +219,33 @@ def set_tso(session, enable):
     session.expect_exact("tcp-segmentation-offload: %s" % on_off)
 
 
-repeat = 10
-def run_benchmark(prefix, client, server):
-    results = []
-    repeat_benchmark(results, prefix + "_udp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "UDP_RR"))
-    #repeat_benchmark(results, prefix + "_tcp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_RR"))
-    # repeat_benchmark(results, prefix + "_tcp_cc",  repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CC"))
-    # repeat_benchmark(results, prefix + "_tcp_crr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CRR"))
+def repeat_benchcat(prefix, client, server, repeat, parameters):
+    for target_mbit in range(1000,9001,1000):
+        for connections in [1, 4, 8]:
+            for active in [True, False]:
+                repeat_benchmark(prefix + "_benchcat", repeat, dict({"target_mbit" : mbit,
+                                                                     "benchcat_connections": connections,
+                                                                     "active": active},
+                                                                    **parameters),
+                                 lambda: benchcat(client, server, target_mbit, connections, active))
 
-    set_tso(client, True)
-    set_tso(server, True)
-    repeat_benchmark(results, prefix + "_tcp_stream_tso", repeat, lambda: netperf_stream_like(client, "TCP_STREAM"))
+def repeat_stream_benchmarks(prefix, client, server, repeat, parameters):
+    repeat_benchmark(prefix + "_tcp_stream", repeat, tso_parameters,
+                     lambda: netperf_stream_like(client, "TCP_STREAM"))
+    repeat_benchcat(prefix, client, server, tso_parameters)
 
-    set_tso(client, False)
-    set_tso(server, False)
-    repeat_benchmark(results, prefix + "_tcp_stream", repeat, lambda: netperf_stream_like(client, "TCP_STREAM"))
+repeat = 2
+def run_benchmark(prefix, client, server, parameters = {}):
 
-    return results
+    repeat_benchmark(prefix + "_udp_rr", repeat, parameters, lambda: 1000000/netperf_rr_like(client, "UDP_RR"))
+    # repeat_benchmark(prefix + "_tcp_rr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_RR"))
+    # repeat_benchmark(prefix + "_tcp_cc",  repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CC"))
+    # repeat_benchmark(prefix + "_tcp_crr", repeat, lambda: 1000000/netperf_rr_like(client, "TCP_CRR"))
+
+    for tso in [True, False]:
+        set_tso(client, tso)
+        set_tso(server, tso)
+        repeat_stream_benchmarks(prefix, client, server, repeat, dict({"tso" : tso}, **parameters))
 
 def run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus, poll_us, batch_size):
     print("--- externalpci ---")
@@ -244,11 +266,10 @@ def run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus, poll_us, ba
     server = None
     client = None
 
-    results = []
     try:
         server = create_and_configure(qemu_cmd, True, server_cpus)
         client = create_and_configure(qemu_cmd, False, client_cpus)
-        results = run_benchmark("epci", client, server)
+        run_benchmark("epci", client, server, {'poll_us' : poll_us, 'batch_size' : batch_size })
     except:
 	print("Unexpected error:", sys.exc_info()[0])
 
@@ -259,8 +280,6 @@ def run_externalpci_benchmark(switch_cpus, server_cpus, client_cpus, poll_us, ba
         qemu_quit(server)
 
     switch.close(force = True)
-
-    return results
 
 class CommandFailed(BaseException):
     pass
@@ -304,24 +323,14 @@ def run_vhost_benchmark(server_cpus, client_cpus):
         server = create_and_configure("%s %s %s" % (qemu_bin, qemu_generic, qemu_vhost_server_args), True, client_cpus)
 
         try:
-            results = run_benchmark("vhost", client, server)
+            run_benchmark("vhost", client, server)
         finally:
             qemu_quit(client)
             qemu_quit(server)
-
-        return results
-
     finally:
         cleanup_fn.reverse()
         for f in cleanup_fn:
             f()
-
-def write_csv(name, results):
-    with open(name, 'wb') as csvfile:
-        writer = csv.writer(csvfile)
-        for r in results:
-            writer.writerow(r)
-
 
 def main(args):
     check_setup()
@@ -352,23 +361,25 @@ def main(args):
     
     print("Let the benchmarking commence!")
 
-    dstr = datetime.datetime.today().strftime("%Y%m%d-%H%m%S")
+    try:
+        run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus)
 
-    write_csv("results-vhost-%s.csv" % dstr, run_vhost_benchmark([switch_cpus[0]] + server_cpus, [switch_cpus[1]] + client_cpus))
+        poll_v  = [0, 5, 10, 50, 100, 1000]
+        batch_v = [1, 16, 32]
 
-    poll_v  = [0, 5, 10, 50, 100, 1000]
-    batch_v = [1, 16, 32]
+        configurations = [ x for x in itertools.product(poll_v, batch_v)]
+        random.shuffle(configurations)
 
-    experiments = [ x for x in itertools.product(poll_v, batch_v)]
-    random.shuffle(experiments)
-
-    for n in range(len(experiments)):
-        poll_us, batch_size = experiments[n]
-        print("\nExperiment %4u/%4u: poll=%u batch=%u" % (n, len(experiments), poll_us, batch_size))
-        write_csv("results-sv3-%s-poll%u-batch%u.csv" % (dstr, poll_us, batch_size),
-                  run_externalpci_benchmark(switch_cpus[:1], server_cpus, client_cpus,
-                                            poll_us, batch_size))
-
+        for n in range(len(configurations)):
+            poll_us, batch_size = configurations[n]
+            run_externalpci_benchmark(switch_cpus[:1], server_cpus, client_cpus, poll_us, batch_size)
+    finally:
+        global experiments
+        if len(experiments) > 0:
+            filename = datetime.datetime.today().strftime("results-%Y%m%d-%H%m%S.json.gz")
+            with gzip.open(filename, "wb") as f:
+                f.write(json.dumps(experiments))
+            print("Written %s." % filename)
 
 if __name__ == "__main__":
     main(sys.argv)
