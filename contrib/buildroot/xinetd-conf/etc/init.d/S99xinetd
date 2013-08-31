@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# Start xinetd superserver
+#
+
+case "$1" in
+  start)
+	echo "Fixing /etc/services..."
+	cat >> /etc/services <<EOF
+nuttcp          5000/tcp
+nuttcp-data     5001/tcp
+nuttcp6         5000/tcp
+nuttcp6-data    5001/tcp
+EOF
+ 	echo "Starting xinetd..."
+	xinetd -pidfile /var/run/xinetd.pid
+	;;
+  stop)
+	echo "Stopping xinetd..."
+	kill `cat /var/run/xinetd.pid`
+	;;
+  restart|reload)
+	echo "Rereading xinetd configuration..."
+	kill -HUP `cat /var/run/xinetd.pid`
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart}"
+	exit 1
+esac
+
+exit $?
+
+
