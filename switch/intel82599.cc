@@ -14,6 +14,7 @@
 
 #include <cassert>
 #include <sys/eventfd.h>
+#include <fstream>
 
 #include <intel82599.hh>
 
@@ -807,12 +808,21 @@ namespace Switch {
     logf("Resetting device.");
     reset();
 
-    if (thread_is_pinned()) {
+    // Bind IRQs
+    auto cpus = thread_cpus();
+    if (cpus.size() == 1) {
       logf("Pinned at %u!", thread_apic_id());
       logf("DCA is %s.", system_supports_dca() ? "available" : "unavailable");
 
-      for (unsigned irq : irqs())
-        logf("XXX Don't know how to ping IRQ%u! Implement me.", irq);
+      uint64_t set = 0;
+      for (auto cpu : cpus) set |= (1ULL << cpu);
+
+      for (unsigned irq : irqs()) {
+	std::stringstream ss; ss << boost::format("/proc/irq/%d/smp_affinity") % irq;
+	std::fstream pirq(ss.str(), std::ios_base::out);
+	pirq << boost::format("%x") % set;
+        logf("Bind IRQ%u to %x.", irq, set);
+      }
 
     } else {
       logf("NOT pinned. DCA not possible.");

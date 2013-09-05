@@ -82,17 +82,18 @@ bool system_supports_dca()
   return cpu_supports_dca && bios_enabled_dca;
 }
 
-bool thread_is_pinned()
+std::vector<unsigned> thread_cpus()
 {
+  std::vector<unsigned> cpu_list;
   cpu_set_t *cpuset = CPU_ALLOC(128);
 
   sched_getaffinity(getpid(), CPU_ALLOC_SIZE(128), cpuset);
-  unsigned count = 0;
   for (unsigned i = 0; i < 128; i++)
-    count += CPU_ISSET(i, cpuset);
+    if (CPU_ISSET(i, cpuset))
+      cpu_list.push_back(i);
 
   CPU_FREE(cpuset);
-  return count == 1;
+  return cpu_list;
 }
 
 uint32_t thread_apic_id()
