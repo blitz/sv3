@@ -32,7 +32,11 @@ def select(data, name, parameters):
     return res
 
 def analyze(values):
-    return numpy.mean(values), numpy.std(values)
+    if (len(values) > 1):
+        return numpy.mean(values), numpy.std(values)
+    else:
+        # XXX
+        return numpy.mean(values), 0
 
 def run_wall_time(run):
     return run['time_end'] - run['time_start']
@@ -46,31 +50,73 @@ def proc_cpu_usage(run):
     
     return cpus - stat['cpu'][cpuutil.STAT_IDLE]/(USER_HZ*run_wall_time(run))
 
+def latency_plot(data):
+    data = select(data, "udp_rr", {})
+    switches    = parameter_values(data, 'switch')
+    loadgenerators = parameter_values(data, 'loadgenerator')
+    with open("latency.csv", "w") as f:
+        for (switch, loadgen) in itertools.product(switches, loadgenerators):
+            exp_list = select(data, "udp_rr", {'switch' : switch,
+                                               'loadgenerator' : loadgen })
+
+            if switch == 'sv3':
+                exp_list = select(exp_list, "nuttcp", {'poll_us' : 0})
+
+            if (len(exp_list) == 0):
+                continue
+            if (len(exp_list) > 1):
+                print(exp_list[0]['parameters'])
+                print(exp_list[1]['parameters'])
+                assert(False)
+
+            rtt, rtt_stddev = analyze([r['value'] for r in exp_list[0]['runs']])
+            f.write("%s-%s %.4f %.4f\n" % (switch, loadgen, rtt, rtt_stddev))
+
 def bw_cpu_plot(data):
-    data_vhost = select(data, "nuttcp", {'switch': 'vhost', 'active': True, 'tso' : True})
-    connections = parameter_values(data_vhost, 'nuttcp_connections')
-    target_mbit = parameter_values(data_vhost, 'target_mbit')
-    for c, mbit in itertools.product(connections, target_mbit):
-        exp_list = select(data_vhost, "nuttcp", {'nuttcp_connections': c, 'target_mbit': mbit})
-        if len(exp_list) == 0:
-            continue
+    data = select(data, "nuttcp", {'active': True})
+    connections = parameter_values(data, 'nuttcp_connections')
+    switches    = parameter_values(data, 'switch')
+    target_mbit = parameter_values(data, 'target_mbit')
+    loadgenerators = parameter_values(data, 'loadgenerator')
+    tso = parameter_values(data, 'tso')
+    for (tso, switch, loadgen) in itertools.product(tso, switches, loadgenerators):
+        with open("bw_cpu_%s_%s_%s.csv" % ("tso" if tso else "notso", switch, loadgen), "w") as f:
+            for c, mbit in itertools.product(connections, target_mbit):
+                exp_list = select(data, "nuttcp", {'switch' : switch, 'nuttcp_connections': c, 'target_mbit': mbit, 'loadgenerator': loadgen, 'tso' : tso})
+                if switch == 'sv3':
+                    exp_list = select(exp_list, "nuttcp", {'poll_us' : 0})
 
-        if len(exp_list) != 1:
-            print(exp_list[0]['parameters'])
-            print(exp_list[1]['parameters'])
-            exit(1)
-        runs = exp_list[0]['runs']
-        if len(runs) < 2:
-            continue
+                if len(exp_list) == 0:
+                    continue
+                
+                if len(exp_list) != 1:
+                    print(exp_list[0]['parameters'])
+                    print(exp_list[1]['parameters'])
+                    exit(1)
+                runs = exp_list[0]['runs']
+                if len(runs) < 2:
+                    continue
 
-        m, std = analyze([proc_cpu_usage(r) for r in runs])
-        print("%d %d %.3f %.4f" % (c, mbit, m, std))
+                invalid = False
+                if mbit != 0:
+                    for r in runs:
+                        relative_error = abs(mbit - r['value']['rate_Mbps'])/mbit
+                        if (relative_error > 0.02):
+                            invalid = True
+
+                if invalid:
+                    print("Skipped %s" % exp_list[0]['parameters'])
+                    continue
+                m, std   = analyze([proc_cpu_usage(r) for r in runs])
+                cu, cstd = analyze([r['js-switch-usage'] for r in runs])
+                f.write("%d %d %.4f %.4f %.4f %.4f\n" % (c, mbit, m, std, cu, cstd))
 
 def generate_plots(json_results_file):
     with gzip.open(json_results_file) as f:
         data = json.loads(f.read())
         
         bw_cpu_plot(data)
+        latency_plot(data)
 
 def main(args):
     for arg in args[1:]:
