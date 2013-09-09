@@ -21,8 +21,7 @@
 
 namespace Switch {
 
-  static const unsigned itr_us = 10000;
-  static const bool enable_rsc = true;
+  static const unsigned itr_us = 4;
 
   // Constants
 
@@ -293,7 +292,8 @@ namespace Switch {
 
     // Don't touch RSC/EITR settings after we're done configuring!
     // This seems to cause queue hangs.
-    _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (4 << GPIE_RSC_DELAY_SHIFT);
+    //_reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (4 << GPIE_RSC_DELAY_SHIFT);
+    _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (0 << GPIE_RSC_DELAY_SHIFT);
     _reg[EITR0] = (itr_us / 2) << EITR_INTERVAL_SHIFT;
 
     // We configure two MSI-X vectors. Interrupts are automasked.
@@ -333,7 +333,7 @@ namespace Switch {
     uint32_t srrctl = (_reg[SRRCTL0] & ~(SRRCTL_DESCTYPE_MASK | SRRCTL_BSIZEPACKET_MASK));
     _reg[SRRCTL0] = srrctl | SRRCTL_DESCTYPE_ADV1B | SRRCTL_DROP_EN
       | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT) | (4 << SRRCTL_BSIZEHEADER_SHIFT);
-    _reg[RSCCTL0]  = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | (enable_rsc ? RSCCTL_RSCEN : 0);
+    _reg[RSCCTL0]  = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | (_enable_lro ? RSCCTL_RSCEN : 0);
 
     _reg[PSRTYPE0] = PSRTYPE_PSR_TYPE4;
 
@@ -403,8 +403,8 @@ namespace Switch {
     _reg[EIMS] = 1;
   }
 
-  Intel82599::Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd)
-    : VfioDevice(group, device_id, fd), _rxtx_eventfd(rxtx_eventfd)
+  Intel82599::Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd, bool enable_lro)
+    : VfioDevice(group, device_id, fd), _rxtx_eventfd(rxtx_eventfd), _enable_lro(enable_lro)
   {
     size_t mmio_size;
     _reg = (uint32_t volatile *)map_bar(VFIO_PCI_BAR0_REGION_INDEX, &mmio_size);
@@ -794,8 +794,8 @@ namespace Switch {
   }
 
   Intel82599Port::Intel82599Port(VfioGroup group, std::string device_id, int fd,
-                                 Switch &sw, std::string name)
-    : Intel82599(group, device_id, fd, sw.event_fd()),
+                                 Switch &sw, std::string name, bool enable_lro)
+    : Intel82599(group, device_id, fd, sw.event_fd(), enable_lro),
       Port(sw, name),
       _misc_thread(&Intel82599Port::misc_thread_fn, this),
       _shadow_rdt0(0), _shadow_rdh0(0),

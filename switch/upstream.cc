@@ -25,12 +25,12 @@ namespace Switch {
     std::string type = args[0];
 
     if (type.compare("ixgbe") == 0) {
-      if (args.size() != 3)
-	throw ConfigurationError("ixgbe needs 2 parameters: vfio device and PCI ID.\n"
-				 "Try something like --upstream-port ixgbe,/dev/vfio/8,0000:02:00.0\n");
+      if (args.size() != 4)
+	throw ConfigurationError("ixgbe needs 3 parameters: vfio device, PCI ID and 1/0 for enabling/disabling TSO and LOR.\n"
+				 "Try something like --upstream-port ixgbe,/dev/vfio/8,0000:02:00.0,1\n");
 
       VfioGroup group(args[1]);
-      UNUSED Intel82599Port *device = group.get_device<Intel82599Port, Switch &>(args[2], sw, "upstream");
+      UNUSED Intel82599Port *device = group.get_device<Intel82599Port, Switch &>(args[2], sw, "upstream", std::stoi(args[3]));
 
     } else {
       throw ConfigurationError("Unknown upstream port type. We only know 'ixgbe'.\n");

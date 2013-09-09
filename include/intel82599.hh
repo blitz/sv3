@@ -50,8 +50,9 @@ namespace Switch {
     int _rxtx_eventfd;
     int _misc_eventfd;
 
-    uint64_t receive_address(unsigned idx);
+    bool _enable_lro;
 
+    uint64_t receive_address(unsigned idx);
 
     // Stop issuing master requests.
     void master_disable();
@@ -85,7 +86,8 @@ namespace Switch {
     std::string status();
     void        reset();
 
-    Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd);
+    Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd,
+               bool enable_lro);
   };
 
   class Intel82599Port : public Intel82599,
@@ -178,7 +180,7 @@ namespace Switch {
     void mark_done(Packet::CompletionInfo &p) override;
 
     Intel82599Port(VfioGroup group, std::string device_id, int fd,
-		   Switch &sw, std::string name);
+		   Switch &sw, std::string name, bool enable_lro);
 
   };
 
