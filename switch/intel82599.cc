@@ -629,7 +629,7 @@ namespace Switch {
       if (not (_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_NOT_FIRST) and rsccnt)
 	_rx_buffers[_shadow_rdh0].flags |= rx_info::FLAGS_RSC;
       else
-	assert((_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_RSC) and rsccnt);
+	assert(not (_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_RSC) or rsccnt);
 
       unsigned nextp  = (_rx_buffers[_shadow_rdh0].flags & rx_info::FLAGS_RSC) ?
 	((rx.lo & RXDESC_LO_NEXTP_MASK) >> RXDESC_LO_NEXTP_SHIFT) : advance_qp(_shadow_rdh0);
