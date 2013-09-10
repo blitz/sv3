@@ -72,6 +72,34 @@ def latency_plot(data):
             rtt, rtt_stddev = analyze([r['value'] for r in exp_list[0]['runs']])
             f.write("%s-%s %.4f %.4f\n" % (switch, loadgen, rtt, rtt_stddev))
 
+def max_bw_plot(data):
+    for tso in [True, False]:
+        with open("bw_max_%s" % ("tso" if tso else "notso"), "w") as f:
+            data = select(data, "nuttcp", {'active': True, 'target_mbit': 0, 'tso': tso})
+            connections = parameter_values(data, 'nuttcp_connections')
+            switches    = parameter_values(data, 'switch')
+            loadgenerators = parameter_values(data, 'loadgenerator')
+
+            f.write("# configuration connections mbit stddev cpu-usage stddev switch-usage stddev\n")
+            for (connections, switch, loadgenerator) in itertools.product(connections, switches, loadgenerators):
+                exp_list = select(data, "nuttcp", {'switch' : switch, 'nuttcp_connections': connections, 'loadgenerator': loadgenerator})
+                if switch == 'sv3':
+                    exp_list = select(exp_list, "nuttcp", {'poll_us' : 0})
+                if (len(exp_list) == 0):
+                    continue
+                if (len(exp_list) > 1):
+                    print(exp_list[0]['parameters'])
+                    print(exp_list[1]['parameters'])
+                    exit(1)
+                    
+                runs = exp_list[0]['runs']
+                mbit, mstd   = analyze([r['value']['rate_Mbps'] for r in runs])
+                usage, ustd  = analyze([proc_cpu_usage(r) for r in runs])
+                susage, sstd = analyze([r['js-switch-usage'] for r in runs])
+
+                f.write("%s-%s %d %.04f %.04f %.04f %.04f %.04f %.04f \n" % (switch, loadgenerator, connections, 
+                                                                             mbit, mstd, usage, ustd, susage, sstd))
+
 def bw_cpu_plot(data):
     data = select(data, "nuttcp", {'active': True})
     connections = parameter_values(data, 'nuttcp_connections')
@@ -117,6 +145,7 @@ def generate_plots(json_results_file):
         
         bw_cpu_plot(data)
         latency_plot(data)
+        max_bw_plot(data)
 
 def main(args):
     for arg in args[1:]:
