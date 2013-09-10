@@ -22,7 +22,7 @@
 namespace Switch {
 
   // Can't set this lower than 6 according to Linux driver.
-  static const unsigned itr_us = 10;
+  static const unsigned itr_us = 50;
 
   // Constants
 
