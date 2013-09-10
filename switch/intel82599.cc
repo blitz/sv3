@@ -333,9 +333,11 @@ namespace Switch {
     uint32_t srrctl = (_reg[SRRCTL0] & ~(SRRCTL_DESCTYPE_MASK | SRRCTL_BSIZEPACKET_MASK));
     _reg[SRRCTL0] = srrctl | SRRCTL_DESCTYPE_ADV1B | SRRCTL_DROP_EN
       | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT) | (4 << SRRCTL_BSIZEHEADER_SHIFT);
-    _reg[RSCCTL0]  = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | (_enable_lro ? RSCCTL_RSCEN : 0);
 
-    _reg[PSRTYPE0] = PSRTYPE_PSR_TYPE4;
+    if (_enable_lro) {
+      _reg[RSCCTL0]  = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | RSCCTL_RSCEN;
+      _reg[PSRTYPE0] = PSRTYPE_PSR_TYPE4;
+    }
 
     _reg[RXDCTL0] = RXDCTL_EN;	// XXX What else?
     poll_for(1000, [&] { return (_reg[RXDCTL0] & RXDCTL_EN) != 0; });
