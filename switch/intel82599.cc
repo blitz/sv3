@@ -21,7 +21,8 @@
 
 namespace Switch {
 
-  static const unsigned itr_us = 4;
+  // Can't set this lower than 6 according to Linux driver.
+  static const unsigned itr_us = 10;
 
   // Constants
 
@@ -293,6 +294,14 @@ namespace Switch {
     // Don't touch RSC/EITR settings after we're done configuring!
     // This seems to cause queue hangs.
     //_reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (4 << GPIE_RSC_DELAY_SHIFT);
+
+    int rsc_delay = 0;
+    if (_enable_lro) {
+      rsc_delay = std::min<int>(7, std::max<int>(0,((int)itr_us / 4) - 1));
+      printf("Interrupt rate is 1 per %uus. RSC delay set to %d.\n", itr_us, rsc_delay);
+
+    }
+
     _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (0 << GPIE_RSC_DELAY_SHIFT);
     _reg[EITR0] = (itr_us / 2) << EITR_INTERVAL_SHIFT;
 
