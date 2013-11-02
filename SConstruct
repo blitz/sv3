@@ -104,6 +104,10 @@ if not conf.CheckCXXHeader('list'):
     print("C++ STL seems broken.")
     Exit(1)
 
+if not conf.CheckCXXHeader('boost/format.hpp'):
+    print("Install boost.")
+    Exit(1)
+
 if not 'cpu' in ARGUMENTS:
     opt_cpu = 'native'
 else:
