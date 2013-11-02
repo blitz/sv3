@@ -15,6 +15,7 @@
 #include <cassert>
 #include <sys/eventfd.h>
 #include <fstream>
+#include <cinttypes>
 
 #include <intel82599.hh>
 
@@ -821,7 +822,7 @@ namespace Switch {
 	std::stringstream ss; ss << boost::format("/proc/irq/%d/smp_affinity") % irq;
 	std::fstream pirq(ss.str(), std::ios_base::out);
 	pirq << boost::format("%x") % set;
-        logf("Bind IRQ%u to %x.", irq, set);
+        logf("Bind IRQ%u to %" PRIx64 ".", irq, set);
       }
 
     } else {
