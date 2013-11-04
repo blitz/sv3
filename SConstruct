@@ -6,9 +6,8 @@ import os
 print("Use 'scons -h' to show build help.")
 
 Help("""
-Usage: scons [force32=0/1] [cxx=COMPILER] [cpu=CPU]
+Usage: scons [cxx=COMPILER] [cpu=CPU]
 
-force32=0/1   Force 32-bit build, if force32=1. Default is 0.
 debug=0/1     Build a debug version, if debug=1. Default is 0.
 cxx=COMPILER  Force build to use a specific C++ compiler.
 cpu=CPU       Optimize for the given CPU. Passed to -march.
@@ -50,9 +49,6 @@ if debug_enabled:
     optflags += ['-O0']
 else:
     optflags += ['-O3']
-
-if int(ARGUMENTS.get('force32', 0)):
-    optflags += ['-m32']
 
 if lto_enabled:
     optflags += ['-flto']
