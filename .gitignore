@@ -10,3 +10,5 @@
 core.*
 /version.inc
 /trace-*
+/linux-headers
+

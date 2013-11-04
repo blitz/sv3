@@ -1,6 +1,7 @@
 # -*- Mode: Python -*-
 
 import sv3utils as u
+import os
 
 print("Use 'scons -h' to show build help.")
 
@@ -92,9 +93,20 @@ else:
 if not conf.CheckPreprocessorMacro('linux/if_tun.h', 'TUNGETVNETHDRSZ'):
     conf.env.Append(CPPFLAGS = ['-DNO_GETVNETHDRSZ'])
 
-if not conf.CheckType('struct virtio_net_hdr', '#include <pci/types.h>\n#include <linux/virtio_net.h>\n'):
+
+if not conf.CheckType('struct virtio_net_hdr', '#include <pci/types.h>\n#include <linux/virtio_net.h>\n#include <linux/vfio.h>\n'):
     print("Your Linux headers are too old.")
-    Exit(1)
+    if not os.path.exists("linux-headers"):
+        print("Getting new ones...")
+        if Execute(["git clone --depth=1 https://github.com/mirrors/linux linux-src",
+                    "make -C linux-src headers_install INSTALL_HDR_PATH=`pwd`/linux-headers",
+                    "rm -fr linux-src"]):
+            print("Failed.")
+            Execute(["rm -fr linux-src"])
+            Exit(1)
+    assert os.path.isdir("linux-headers")
+    conf.env.Append(CPPPATH = ["#linux-headers/include"])
+    print("Linux headers installed. Let's hope this works.")
 
 if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
     print("Your compiler is too old.")
