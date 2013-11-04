@@ -16,13 +16,11 @@
 #include <sys/eventfd.h>
 #include <fstream>
 #include <cinttypes>
+#include <algorithm>
 
 #include <intel82599.hh>
 
 namespace Switch {
-
-  // Can't set this lower than 6 according to Linux driver.
-  static const unsigned itr_us = 50;
 
   // Constants
 
@@ -297,13 +295,13 @@ namespace Switch {
 
     int rsc_delay = 0;
     if (_enable_lro) {
-      rsc_delay = std::min<int>(7, std::max<int>(0,((int)itr_us / 4) - 1));
-      printf("Interrupt rate is 1 per %uus. RSC delay set to %d.\n", itr_us, rsc_delay);
+      rsc_delay = std::min<int>(7, std::max<int>(0,((int)_itr_us / 4) - 1));
+      printf("Interrupt rate is 1 per %uus. RSC delay set to %d.\n", _itr_us, rsc_delay);
 
     }
 
     _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (0 << GPIE_RSC_DELAY_SHIFT);
-    _reg[EITR0] = (itr_us / 2) << EITR_INTERVAL_SHIFT;
+    _reg[EITR0] = (_itr_us / 2) << EITR_INTERVAL_SHIFT;
 
     // We configure two MSI-X vectors. Interrupts are automasked.
     _reg[EIAM] = 0x7FFFFFFF;
@@ -414,8 +412,10 @@ namespace Switch {
     _reg[EIMS] = 1;
   }
 
-  Intel82599::Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd, bool enable_lro)
-    : VfioDevice(group, device_id, fd), _rxtx_eventfd(rxtx_eventfd), _enable_lro(enable_lro)
+  Intel82599::Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd,
+			 bool enable_lro, unsigned irq_rate)
+    : VfioDevice(group, device_id, fd), _rxtx_eventfd(rxtx_eventfd),
+      _enable_lro(enable_lro), _itr_us(std::max<unsigned>(6, 1000000 / irq_rate))
   {
     size_t mmio_size;
     _reg = (uint32_t volatile *)map_bar(VFIO_PCI_BAR0_REGION_INDEX, &mmio_size);
@@ -805,8 +805,9 @@ namespace Switch {
   }
 
   Intel82599Port::Intel82599Port(VfioGroup group, std::string device_id, int fd,
-                                 Switch &sw, std::string name, bool enable_lro)
-    : Intel82599(group, device_id, fd, sw.event_fd(), enable_lro),
+                                 Switch &sw, std::string name,
+				 bool enable_lro, unsigned irq_rate)
+    : Intel82599(group, device_id, fd, sw.event_fd(), enable_lro, irq_rate),
       Port(sw, name),
       _misc_thread(&Intel82599Port::misc_thread_fn, this),
       _shadow_rdt0(0), _shadow_rdh0(0),

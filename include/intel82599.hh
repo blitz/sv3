@@ -50,7 +50,10 @@ namespace Switch {
     int _rxtx_eventfd;
     int _misc_eventfd;
 
-    bool _enable_lro;
+    const bool     _enable_lro;
+
+    // Can't set this lower than 6 according to Linux driver.
+    const unsigned _itr_us;
 
     uint64_t receive_address(unsigned idx);
 
@@ -87,7 +90,7 @@ namespace Switch {
     void        reset();
 
     Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd,
-               bool enable_lro);
+               bool enable_lro, unsigned irq_rate);
   };
 
   class Intel82599Port : public Intel82599,
@@ -180,8 +183,8 @@ namespace Switch {
     void mark_done(Packet::CompletionInfo &p) override;
 
     Intel82599Port(VfioGroup group, std::string device_id, int fd,
-		   Switch &sw, std::string name, bool enable_lro);
-
+		   Switch &sw, std::string name,
+		   bool enable_lro, unsigned irq_rate);
   };
 
 }
