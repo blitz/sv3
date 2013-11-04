@@ -104,7 +104,8 @@ if not conf.CheckType('struct virtio_net_hdr', '#include <pci/types.h>\n#include
     conf.env.Append(CPPPATH = ["#linux-headers/include"])
     print("Linux headers installed. Let's hope this works.")
 
-if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
+# We have to use gnu++11 here to make old versions of userspace-rcu happy.
+if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=gnu++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
     print("Your compiler is too old.")
     Exit(1)
 
@@ -179,6 +180,6 @@ if pcap_is_available:
 else:
     print("Not building test/packets! Not running tests!")
 
-host_env.Program('test/membw', ['test/membw.cc'])
+host_env.Program('test/membw', ['test/membw.cc'], LIBS=["rt"])
 
 # EOF
