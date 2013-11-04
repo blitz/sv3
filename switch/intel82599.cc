@@ -824,7 +824,6 @@ namespace Switch {
     auto cpus = thread_cpus();
     if (cpus.size() == 1) {
       logf("Pinned at %u!", thread_apic_id());
-      logf("DCA is %s.", system_supports_dca() ? "available" : "unavailable");
 
       uint64_t set = 0;
       for (auto cpu : cpus) set |= (1ULL << cpu);
@@ -836,8 +835,10 @@ namespace Switch {
         logf("Bind IRQ%u to %" PRIx64 ".", irq, set);
       }
 
+      logf("Watch out for the irqbalance daemon. It will destroy our IRQ affinity settings.");
+
     } else {
-      logf("NOT pinned. DCA not possible.");
+      logf("NOT pinned.");
     }
 
     memset(_rx_buffers, 0, sizeof(_rx_buffers));

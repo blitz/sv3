@@ -66,22 +66,6 @@ std::string hexdump(const void *p, unsigned len)
   return ss.str();
 }
 
-bool system_supports_dca()
-{
-  uint32_t eax = 1;
-  uint32_t ecx;
-
-  asm ("cpuid" : "+a" (eax), "=c" (ecx) :: "ebx", "edx");
-  
-  bool cpu_supports_dca = ecx & (1 << 18);
-
-  eax = 9;
-  asm ("cpuid" : "+a" (eax) :: "ecx", "ebx", "edx");
-  bool bios_enabled_dca = (eax & 1);
-
-  return cpu_supports_dca && bios_enabled_dca;
-}
-
 std::vector<unsigned> thread_cpus()
 {
   std::vector<unsigned> cpu_list;
