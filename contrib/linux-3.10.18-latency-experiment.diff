@@ -1,0 +1,45 @@
+commit 69a9cb2f9520a911dd8ca668a56b489eb1f6c0c4
+Author: Julian Stecklina <js@alien8.de>
+Date:   Fri Nov 8 14:49:54 2013 +0100
+
+    Crude hack to test mmio and irq injection performance.
+    vhost-net is otherwise non-functional!
+
+diff --git a/drivers/vhost/net.c b/drivers/vhost/net.c
+index d6a518c..e1cfbdb 100644
+--- a/drivers/vhost/net.c
++++ b/drivers/vhost/net.c
+@@ -672,7 +672,7 @@ static void handle_rx_kick(struct vhost_work *work)
+ 						  poll.work);
+ 	struct vhost_net *net = container_of(vq->dev, struct vhost_net, dev);
+ 
+-	handle_rx(net);
++        eventfd_signal(vq->call_ctx, 1);
+ }
+ 
+ static void handle_tx_net(struct vhost_work *work)
+@@ -686,7 +686,8 @@ static void handle_rx_net(struct vhost_work *work)
+ {
+ 	struct vhost_net *net = container_of(work, struct vhost_net,
+ 					     poll[VHOST_NET_VQ_RX].work);
+-	handle_rx(net);
++
++	// handle_rx(net);
+ }
+ 
+ static int vhost_net_open(struct inode *inode, struct file *f)
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index 60aa5ad..d37b78b 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -756,6 +756,10 @@ long vhost_vring_ioctl(struct vhost_dev *d, int ioctl, void __user *argp)
+ 				eventfd_ctx_fileget(eventfp) : NULL;
+ 		} else
+ 			filep = eventfp;
++
++                printk("vhost set call! initial ping\n");
++                eventfd_signal(vq->call_ctx, 1);
++
+ 		break;
+ 	case VHOST_SET_VRING_ERR:
+ 		if (copy_from_user(&f, argp, sizeof f)) {
