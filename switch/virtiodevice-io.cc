@@ -323,6 +323,12 @@ namespace Switch {
   {
     VirtQueue &vq = tx_vq();
 
+    if (enable_notifications) {
+      uint64_t val = 1;
+      write(_irq_fd[0], &val, sizeof(val));
+    }
+    return false;
+
     vq.vring.used->flags = enable_notifications ? 0 : VRING_USED_F_NO_NOTIFY;
 
     if (not (status & VIRTIO_CONFIG_S_DRIVER_OK) or
