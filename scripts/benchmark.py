@@ -484,7 +484,7 @@ def main(args):
         
         for conf in configurations:
             tsov, irqr = conf
-            #run_vhost_benchmark(tsov, irqr)
+            run_vhost_benchmark(tsov, irqr)
 
         tso     = [True, False]
         poll_v  = [0]

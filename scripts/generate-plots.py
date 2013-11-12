@@ -51,7 +51,7 @@ def proc_cpu_usage(run):
     return cpus - stat['cpu'][cpuutil.STAT_IDLE]/(USER_HZ*run_wall_time(run))
 
 def latency_plot(data):
-    data = select(data, "udp_rr", {})
+    data = select(data, "udp_rr", {'irq_rate' : 50000, 'tso' : False})
     switches    = parameter_values(data, 'switch')
     loadgenerators = parameter_values(data, 'loadgenerator')
     with open("latency.csv", "w") as f:
