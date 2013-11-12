@@ -19,6 +19,7 @@ import platform
 import json
 import gzip
 import re
+import traceback
 
 # Local "libraries"
 import topology
@@ -43,7 +44,7 @@ connection_numbers = [1]
 loadgen_host = "testuser@cosel"
 
 # The PCI ID of our network device. We need this to bind it to VFIO.
-net_if_pciid  = '0000:02:00.1'
+net_if_pciid  = '0000:01:00.1'
 
 # Original driver. We need this to reattach the driver after the
 # benchmark run.
@@ -51,7 +52,7 @@ net_if_driver = 'ixgbe'
 
 # This is only used for vhost benchmarks. We attach macvtap interfaces
 # to this external NIC.
-net_if    = "p33p2"
+net_if    = "p1p2"
 
 # XXX Check that $net_if is a network device provided by $net_if_pciid
 
@@ -79,7 +80,7 @@ qemu_generic = "-enable-kvm -m 2048 -nographic -kernel " + linux_bin + " -append
 all_cgroups = ["js-switch", "js-server", "js-client"]
 
 def check_setup():
-    for service in ["cups", "sendmail", "crashplan", "irqbalance", "gdm"]:
+    for service in ["cups", "sendmail", "crashplan", "irqbalance", "gdm", "btsync"]:
         os.system("systemctl stop %s" % service)
 
     for cpu in os.listdir("/sys/devices/system/cpu"):
@@ -91,9 +92,6 @@ def check_setup():
                 c.write(new)
                 if old != new:
                     print("%s: %s -> performance" % (cpu, old))
-
-    print("Stopping irqbalance.")
-    os.system("systemctl stop irqbalance")
 
     if not os.path.exists(qemu_bin):
         print("Qemu not found at: " + qemu_bin)
@@ -247,9 +245,18 @@ def set_tso(session, enable, nic = None):
         print(e)
         session.interact()
 
+def set_irq_rate(session, rate, nic = None):
+    try:
+        netdev = nic if nic else get_nic(session)
+	print("Setting IRQ usecs to %u." % int(1000000.0 / rate))
+        ethtool_cmd = "sudo ethtool -C %s rx-usecs %u" % (netdev, int(1000000.0 / rate))
+        session.sendline(ethtool_cmd)
+    except Exception, e:
+        print(e)
+        session.interact()
+
 
 def nuttcp(client, server, target_mbit, connections, active, bw_reached_fn):
-    #client.sendline("benchcat ")
     timeout = 30
     client.sendline("nuttcp -fparse %s -T%d -Inuttcp -N%d %s 192.168.1.100" % ("-t" if active else "-r",
                                                                                timeout, connections,
@@ -314,12 +321,12 @@ def run_benchmark(vm_client, vm_server, default_parameters = {}):
         bench_client.expect("bytes from", timeout=2)
         print("It's alive!")
 
-        repeat_stream_benchmarks(bench_client, vm_server, stream_repeat, parameters)
+        #repeat_stream_benchmarks(bench_client, vm_server, stream_repeat, parameters)
         repeat_benchmark("tcp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "TCP_RR"))
         repeat_benchmark("udp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "UDP_RR"))
 
 
-def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size):
+def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size, irq_rate):
     print("--- externalpci ---")
     print("Switch on %s." % (switch_cpus))
     qemu_externalpci_args = "-mem-path /tmp -device externalpci,socket=/tmp/sv3 -net none "
@@ -336,7 +343,7 @@ def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size):
 
         switch_cmd  = cgroup.cgexec_cmd("js-switch")
         switch_cmd += " taskset -c %s " % thread_list_to_str(switch_cpus)
-        switch_cmd += "../sv3 -f --upstream-port %s,/dev/vfio/%s,%s,%s --poll-us %u --batch-size %u" % (net_if_driver, iommu_group, net_if_pciid, 1 if tso else 0, poll_us, batch_size)
+        switch_cmd += "../sv3 -f --upstream-port %s,device=/dev/vfio/%s,pciid=%s,tso=%s,irq_rate=%s --poll-us %u --batch-size %u" % (net_if_driver, iommu_group, net_if_pciid, 1 if tso else 0,irq_rate, poll_us, batch_size)
         #print(switch_cmd)
         print("Starting switch ...")
         switch = e.spawn(switch_cmd)
@@ -348,8 +355,8 @@ def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size):
         switch.expect_exact("upstream: Link is UP at 10 GBit/s")
         print("Switch is running.")
 
-        # XXX Figure out which IRQs the switch is using for upstream
-        # XXX Set IRQ affinity
+        # IRQ affinity is set by sv3 itself, when it sees that it is
+        # pinned to one CPU.
 
         try:
             server = create_and_configure(qemu_cmd, True)
@@ -357,10 +364,13 @@ def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size):
 
             for s in [client, server]:
                 set_tso(s, tso)
+                # This will only work on the external system, but it is okay.
+                set_irq_rate(s, irq_rate)
 
-            run_benchmark(client, server, {'switch': 'sv3', 'poll_us' : poll_us, 'batch_size' : batch_size, 'tso' : tso })
+            run_benchmark(client, server, {'switch': 'sv3', 'poll_us' : poll_us, 'batch_size' : batch_size, 'tso' : tso, 'irq_rate' : irq_rate })
         except:
             print("Unexpected error:", sys.exc_info()[0])
+            print(traceback.format_exc())
 
     finally:
         if switch:
@@ -396,7 +406,7 @@ def create_macvtap(netif, macvtap, mac):
 def delete_macvtap(macvtap):
     e.run("ip link delete %s type macvtap" % macvtap)
 
-def run_vhost_benchmark(tso):
+def run_vhost_benchmark(tso, irqr):
     print("\n--- vhost ---")
     cleanup_fn = []
     try:
@@ -407,6 +417,7 @@ def run_vhost_benchmark(tso):
 
         host = e.spawn("sh")
         set_tso(host, tso, net_if)
+	set_irq_rate(host, irqr, net_if)
         host.close()
 
         client_mac = "1a:54:0b:ca:bc:10"
@@ -422,9 +433,10 @@ def run_vhost_benchmark(tso):
 
         for s in [client, server]:
             set_tso(s, tso)
+            set_irq_rate(s, irqr)
 
         try:
-            run_benchmark(client, server, {'switch' : 'vhost', 'tso' : tso})
+            run_benchmark(client, server, {'switch' : 'vhost', 'tso' : tso, 'irq_rate' : irqr})
         finally:
             qemu_quit(client)
             qemu_quit(server)
@@ -463,14 +475,23 @@ def main(args):
 
     try:
         start_time = time.time()
-        for tso in [False, True]:
-            run_vhost_benchmark(tso)
+
+        tso     = [False, True]
+        irqr_v  = [10000, 50000]
+
+        configurations = [ x for x in itertools.product(tso, irqr_v)]
+        random.shuffle(configurations)
+        
+        for conf in configurations:
+            tsov, irqr = conf
+            #run_vhost_benchmark(tsov, irqr)
 
         tso     = [True, False]
-        poll_v  = [0, 50, 1000]
+        poll_v  = [0]
         batch_v = [16]
 
-        configurations = [ x for x in itertools.product(tso, poll_v, batch_v)]
+
+        configurations = [ x for x in itertools.product(tso, poll_v, batch_v, irqr_v)]
         random.shuffle(configurations)
 
         for n in range(len(configurations)):
@@ -479,9 +500,9 @@ def main(args):
             # We count the vhost experiment here as well.
             print("\n=== Remaining time %.2fh. ===\n" % ((remaining_experiments * (elapsed / (n+1))) / (60*60)))
 
-            tso, poll_us, batch_size = configurations[n]
-            print("TSO %s, poll %d, batch %d" % (tso, poll_us, batch_size))
-            run_externalpci_benchmark([switch_cpu], tso, poll_us, batch_size)
+            tso, poll_us, batch_size, irq_rate = configurations[n]
+            print("TSO %s, poll %d, batch %d, irqr %u" % (tso, poll_us, batch_size, irq_rate))
+            run_externalpci_benchmark([switch_cpu], tso, poll_us, batch_size, irq_rate)
 
     finally:
         global experiments
