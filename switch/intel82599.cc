@@ -818,6 +818,8 @@ namespace Switch {
 	map_memory_to_device(p, s, true, true);
       });
 
+    logf("Interrupt rate set to %u.", irq_rate);
+
     logf("Resetting device.");
     reset();
 

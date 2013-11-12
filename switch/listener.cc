@@ -124,7 +124,7 @@ namespace Switch {
 						req.region.offset)));
       close(req.region.fd);
       if (r.mapping == MAP_FAILED) {
-	_sw.logf("mmap failed.");
+	_sw.logf("mmap failed. Did you use -mem-path for qemu?");
 	return false;
       }
       address_hint += req.region.size;
