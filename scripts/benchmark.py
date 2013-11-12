@@ -34,7 +34,7 @@ def thread_list_to_str(tl):
     return ",".join([str(t.id) for t in tl])
 
 # How often do we want to repeat individual measurements
-rr_repeat     = 3
+rr_repeat     = 5
 stream_repeat = 5
 
 # We want to do stream measurements with what number of connections?
@@ -199,7 +199,7 @@ def create_and_configure(qemu_cmd, is_server):
     return p
 
 def netperf_rr_like(client, test):
-    client.sendline("netperf -l 5 -t %s -H 192.168.1.100" % test)
+    client.sendline("netperf -l 1 -t %s -H 192.168.1.100" % test)
     client.expect_exact("Socket Size   Request  Resp.   Elapsed  Trans.", timeout=20)
     client.expect_exact("Send   Recv   Size     Size    Time     Rate")
     client.expect_exact("bytes  Bytes  bytes    bytes   secs.    per sec")
@@ -249,7 +249,7 @@ def set_irq_rate(session, rate, nic = None):
     try:
         netdev = nic if nic else get_nic(session)
 	print("Setting IRQ usecs to %u." % int(1000000.0 / rate))
-        ethtool_cmd = "sudo ethtool -C %s rx-usecs %u" % (netdev, int(1000000.0 / rate))
+        ethtool_cmd = "sudo ethtool -C %s rx-usecs %u" % (netdev, int(1000000.0 / rate) if rate != 0 else 0)
         session.sendline(ethtool_cmd)
     except Exception, e:
         print(e)
@@ -322,8 +322,9 @@ def run_benchmark(vm_client, vm_server, default_parameters = {}):
         print("It's alive!")
 
         #repeat_stream_benchmarks(bench_client, vm_server, stream_repeat, parameters)
-        repeat_benchmark("tcp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "TCP_RR"))
-        repeat_benchmark("udp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "UDP_RR"))
+        if default_parameters['irq_rate'] == 0:
+            repeat_benchmark("tcp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "TCP_RR"))
+            repeat_benchmark("udp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "UDP_RR"))
 
 
 def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size, irq_rate):
@@ -477,7 +478,7 @@ def main(args):
         start_time = time.time()
 
         tso     = [False, True]
-        irqr_v  = [10000, 50000]
+        irqr_v  = [10000, 0]
 
         configurations = [ x for x in itertools.product(tso, irqr_v)]
         random.shuffle(configurations)
@@ -486,10 +487,8 @@ def main(args):
             tsov, irqr = conf
             run_vhost_benchmark(tsov, irqr)
 
-        tso     = [True, False]
         poll_v  = [0]
         batch_v = [16]
-
 
         configurations = [ x for x in itertools.product(tso, poll_v, batch_v, irqr_v)]
         random.shuffle(configurations)
