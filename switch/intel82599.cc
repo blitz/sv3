@@ -294,14 +294,14 @@ namespace Switch {
     //_reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (4 << GPIE_RSC_DELAY_SHIFT);
 
     int rsc_delay = 0;
-    if (_enable_lro) {
+    if (_itr_us and _enable_lro) {
       rsc_delay = std::min<int>(7, std::max<int>(0,((int)_itr_us / 4) - 1));
-      printf("Interrupt rate is 1 per %uus. RSC delay set to %d.\n", _itr_us, rsc_delay);
-
     }
+    printf("Interrupt rate is 1 per %uus. RSC delay set to %d.\n", _itr_us, rsc_delay);
 
-    _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (0 << GPIE_RSC_DELAY_SHIFT);
-    _reg[EITR0] = (_itr_us / 2) << EITR_INTERVAL_SHIFT;
+    _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (rsc_delay << GPIE_RSC_DELAY_SHIFT);
+    if (_itr_us)
+      _reg[EITR0] = (_itr_us / 2) << EITR_INTERVAL_SHIFT;
 
     // We configure two MSI-X vectors. Interrupts are automasked.
     _reg[EIAM] = 0x7FFFFFFF;
@@ -415,7 +415,7 @@ namespace Switch {
   Intel82599::Intel82599(VfioGroup group, std::string device_id, int fd, int rxtx_eventfd,
 			 bool enable_lro, unsigned irq_rate)
     : VfioDevice(group, device_id, fd), _rxtx_eventfd(rxtx_eventfd),
-      _enable_lro(enable_lro), _itr_us(std::max<unsigned>(6, 1000000 / irq_rate))
+      _enable_lro(enable_lro), _itr_us(irq_rate == 0 ? 0 : std::max<unsigned>(6, 1000000 / irq_rate))
   {
     size_t mmio_size;
     _reg = (uint32_t volatile *)map_bar(VFIO_PCI_BAR0_REGION_INDEX, &mmio_size);
