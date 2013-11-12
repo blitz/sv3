@@ -61,6 +61,7 @@ namespace Switch {
     I99_REG(RDH0,     0x1010),
     I99_REG(RDT0,     0x1018),
     I99_REG(FCTRL,    0x5080),
+    I99_REG(RFCTL,    0x5008),
 
     I99_REG(TDBAL0,   0x6000),
     I99_REG(TDBAH0,   0x6004),
@@ -149,7 +150,11 @@ namespace Switch {
     RSCCTL_MAXDESC_MASK   = (3 << 2),
     RSCCTL_MAXDESC_16     = (3 << 2),
     RSCCTL_MAXDESC_8      = (2 << 2),
+    RSCCTL_MAXDESC_4      = (1 << 2),
+    RSCCTL_MAXDESC_1      = (0 << 2),
     RSCCTL_RSCEN          = (1 << 0),
+
+    RFCTL_RSC_DIS         = (1 << 5),
 
     LINKS_LINK_UP          = (1 << 30),
     LINKS_LINK_SPEED_SHIFT = 28,
@@ -300,8 +305,7 @@ namespace Switch {
     printf("Interrupt rate is 1 per %uus. RSC delay set to %d.\n", _itr_us, rsc_delay);
 
     _reg[GPIE]  = GPIE_MULTIPLE_MSIX | GPIE_EIAME | GPIE_PBA | (rsc_delay << GPIE_RSC_DELAY_SHIFT);
-    if (_itr_us)
-      _reg[EITR0] = (_itr_us / 2) << EITR_INTERVAL_SHIFT;
+    _reg[EITR0] = (_itr_us / 2) << EITR_INTERVAL_SHIFT;
 
     // We configure two MSI-X vectors. Interrupts are automasked.
     _reg[EIAM] = 0x7FFFFFFF;
@@ -341,9 +345,16 @@ namespace Switch {
     _reg[SRRCTL0] = srrctl | SRRCTL_DESCTYPE_ADV1B | SRRCTL_DROP_EN
       | ((RX_BUFFER_SIZE / 1024) << SRRCTL_BSIZEPACKET_SHIFT) | (4 << SRRCTL_BSIZEHEADER_SHIFT);
 
-    if (_enable_lro) {
-      _reg[RSCCTL0]  = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | RSCCTL_RSCEN;
+
+    if (_itr_us and _enable_lro) {
       _reg[PSRTYPE0] = PSRTYPE_PSR_TYPE4;
+      _reg[RSCCTL0]  = (_reg[RSCCTL0] & ~RSCCTL_MAXDESC_MASK)  | RSCCTL_MAXDESC_8 | RSCCTL_RSCEN;
+      _reg[RFCTL]   &= ~RFCTL_RSC_DIS;
+    } else {
+      printf("RSC disabled.\n");
+      _reg[PSRTYPE0] = 0;
+      _reg[RSCCTL0]  = 0;
+      _reg[RFCTL]    = RFCTL_RSC_DIS;
     }
 
     _reg[RXDCTL0] = RXDCTL_EN;	// XXX What else?
