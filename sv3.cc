@@ -124,7 +124,7 @@ int main(int argc, char **argv)
     { 0, 0, 0, 0 },
   };
 
-  int         poll_us    = 50;
+  int         poll_us    =  0;
   int         batch_size = 16;
 #ifdef TRACING
   std::string trace_file;
