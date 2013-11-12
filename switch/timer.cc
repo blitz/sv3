@@ -16,37 +16,62 @@
 #include <timer.hh>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include <boost/algorithm/string.hpp>
 
 #include <cpuid.h>
 
 namespace Switch {
 
-  uint64_t cycles_per_second()
+  static bool tsc_invariant()
   {
-    static uint64_t cps = 0;
-
-    if (cps) return cps;
-
-    FILE *f = fopen("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq", "r");
-    unsigned long long freq;
-    if (not f or (1 != fscanf(f, "%llu", &freq))) {
-      perror("unable to get CPU frequency");
-      abort();
-    }
-    freq *= 1000;		// It's in kHz.
-
-    printf("CPU frequency %llu\n", freq);
-    fclose(f);
-
     unsigned level = 0x80000007;
     unsigned eax, ebx, ecx, edx = 0;
     __get_cpuid(level, &eax, &ebx, &ecx, &edx);
-    if (not (edx & (1 << 8 /* invariant TSC */))) {
+    return (edx & (1 << 8 /* invariant TSC */));
+ }
+
+  uint64_t cycles_per_second()
+  {
+    static uint64_t cps = 0;
+    if (cps) return cps;
+
+    if (not tsc_invariant()) {
       fprintf(stderr, "TSC is not invariant!\n");
       abort();
     }
 
-    return (cps = freq);
+    // XXX Linux specific
+    std::ifstream cpuinfo_file("/proc/cpuinfo");
+
+    std::string line;
+    while (std::getline(cpuinfo_file, line)) {
+      std::stringstream line_str(line);
+      std::string key, value;
+
+      // Generates scary bloated code and depends on input locale ...
+      std::getline(line_str, key, ':');
+      boost::algorithm::trim(key);
+
+      std::getline(line_str, value);
+      boost::algorithm::trim(value);
+
+      if (key.compare("cpu MHz") == 0) {
+	float v = std::stof(value);
+	cps = v * 1000000;
+	break;
+      }
+    }
+
+    if (cps == 0) {
+      perror("unable to get CPU frequency");
+      abort();
+    }
+
+    printf("CPU frequency %" PRIu64 "\n", cps);
+
+    return cps;
   }
 
 }
