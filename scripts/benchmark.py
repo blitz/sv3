@@ -243,16 +243,21 @@ def set_tso(session, enable, nic = None):
         session.expect_exact("tcp-segmentation-offload: %s" % on_off)
     except Exception, e:
         print(e)
+	print(traceback.format_exc())
         session.interact()
 
 def set_irq_rate(session, rate, nic = None):
     try:
         netdev = nic if nic else get_nic(session)
-	print("Setting IRQ usecs to %u." % int(1000000.0 / rate))
-        ethtool_cmd = "sudo ethtool -C %s rx-usecs %u" % (netdev, int(1000000.0 / rate) if rate != 0 else 0)
+        if rate == 0:
+		usecs = 0
+	else:
+		usecs = int(1000000.0 / rate)
+        ethtool_cmd = "sudo ethtool -C %s rx-usecs %u" % (netdev, usecs)
         session.sendline(ethtool_cmd)
     except Exception, e:
         print(e)
+        print(traceback.format_exc())
         session.interact()
 
 
@@ -321,10 +326,15 @@ def run_benchmark(vm_client, vm_server, default_parameters = {}):
         bench_client.expect("bytes from", timeout=2)
         print("It's alive!")
 
-        #repeat_stream_benchmarks(bench_client, vm_server, stream_repeat, parameters)
-        if default_parameters['irq_rate'] == 0:
+        if default_parameters['irq_rate'] != 0:
+            repeat_stream_benchmarks(bench_client, vm_server, stream_repeat, parameters)
+	else:
+		print("Skipped stream benchmarks (IRQ rate is high)")
+        if default_parameters['irq_rate'] == 0 and not default_parameters['tso']:
             repeat_benchmark("tcp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "TCP_RR"))
             repeat_benchmark("udp_rr", rr_repeat, parameters, lambda: 1000000/netperf_rr_like(bench_client, "UDP_RR"))
+	else:
+		print("Skipped latency benchmarks, because IRQ rate is high or TSO is enabled.")
 
 
 def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size, irq_rate):
@@ -338,6 +348,14 @@ def run_externalpci_benchmark(switch_cpus, tso, poll_us, batch_size, irq_rate):
     client = None
 
     try:
+        # Reset everything we can. Works around driver initialization bugs?
+        cur_driver = pci.get_driver(net_if_pciid)
+        if cur_driver != net_if_driver:
+            os.system("rmmod vfio-pci")
+            print("Rebinding NIC to original kernel driver.")
+            pci.bind(net_if_driver, net_if_pciid)
+	time.sleep(2)
+
         print("Configuring vfio ...")
         pci.bind_to_vfio(net_if_pciid)
         iommu_group = pci.get_iommu_group(net_if_pciid)
@@ -481,7 +499,6 @@ def main(args):
         irqr_v  = [10000, 0]
 
         configurations = [ x for x in itertools.product(tso, irqr_v)]
-        random.shuffle(configurations)
         
         for conf in configurations:
             tsov, irqr = conf
@@ -491,7 +508,6 @@ def main(args):
         batch_v = [16]
 
         configurations = [ x for x in itertools.product(tso, poll_v, batch_v, irqr_v)]
-        random.shuffle(configurations)
 
         for n in range(len(configurations)):
             remaining_experiments = len(configurations) - n
