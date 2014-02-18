@@ -1,6 +1,4 @@
-[submodule "contrib/qemu"]
+[submodule "qemu"]
 	path = contrib/qemu
-	url = https://github.com/blitz/qemu.git
-[submodule "contrib/benchcat"]
-	path = contrib/benchcat
-	url = https://github.com/TUD-OS/benchcat.git
+	url = git@github.com:virtualopensystems/qemu.git
+	branch = vhost-user-v8
