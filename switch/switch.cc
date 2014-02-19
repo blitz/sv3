@@ -59,8 +59,8 @@ namespace Switch {
   void Switch::remove_dma_memory(Port &port)
   {
     auto it = _dma_regions.find(&port);
-    assert(it != _dma_regions.end());
-    _dma_regions.erase(it);
+    if (it != _dma_regions.end())
+      _dma_regions.erase(it);
   }
 
   /// Switch a couple of packets. Returns false if we were idle.

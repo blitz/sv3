@@ -26,6 +26,8 @@
 #include <listener.hh>
 #include <system_error>
 
+#include <vhost-user.hh>
+
 namespace Switch {
 
   Session::~Session() {
@@ -85,97 +87,115 @@ namespace Switch {
     return s;
   }
 
-  bool Session::handle_request(externalpci_req const &req,
-			       externalpci_res &res)
+  static std::unique_ptr<vhost_request> new_vhost_response(size_t payload)
   {
-    memset(reinterpret_cast<void *>(&res), 0, sizeof(res));
-    res.type = req.type;
+    void *mem = new char[sizeof(vhost_request) + payload];
+    auto r    = std::unique_ptr<vhost_request>(new (mem) vhost_request);
+    r->hdr.size  = payload;
+    r->hdr.flags = 1;
+    return r;
+  }
 
-    switch (req.type) {
-    case EXTERNALPCI_REQ_PCI_INFO: {
-
-      _device.get_device_info(res.pci_info.vendor_id,    res.pci_info.device_id,
-			      res.pci_info.subsystem_id, res.pci_info.subsystem_vendor_id);
-
-      for (unsigned i = 0; i < 6; i++)
-	_device.get_bar_info(i, res.pci_info.bar[i].size);
-
-      _device.get_irq_info(res.pci_info.msix_vectors);
-
-      _device.get_hotspot(res.pci_info.hotspot_bar,
-			  res.pci_info.hotspot_addr,
-			  res.pci_info.hotspot_size,
-			  res.pci_info.hotspot_fd);
-
+  std::unique_ptr<vhost_request> Session::handle_request(vhost_request const &req,
+                                                         int *fds)
+  {
+    switch (req.hdr.request) {
+    case VHOST_USER_SET_OWNER:
+      _sw.logf("VHOST_USER_SET_OWNER");
       break;
-    }
-    case EXTERNALPCI_REQ_REGION: {
-      // We need this hint, because otherwise are pretty certain to
-      // get virtual addresses for which we cannot create 1:1 DMA
-      // mappings. Don't worry about races here, mmap takes care of
-      // that.
-      static uintptr_t address_hint = (1ULL << 32);
-      Region r(req.region.phys_addr,
-	       req.region.size,
-	       reinterpret_cast<uint8_t *>(mmap((void *)address_hint, req.region.size,
-						PROT_READ | PROT_WRITE,
-						MAP_SHARED,
-						req.region.fd,
-						req.region.offset)));
-      close(req.region.fd);
-      if (r.mapping == MAP_FAILED) {
-	_sw.logf("mmap failed. Did you use -mem-path for qemu?");
-	return false;
-      }
-      address_hint += req.region.size;
-      return insert_region(r);
-    }
-    case EXTERNALPCI_REQ_RESET: {
-      _device.reset();
-      break;
-    }
-    case EXTERNALPCI_REQ_IOT: {
-      bool irqs_changed = false;
-
-      if (req.iot_req.type == externalpci_iot_req::IOT_READ)
-        res.iot_res.value = _device.io_read(req.iot_req.bar,
-					    req.iot_req.hwaddr, req.iot_req.size);
-      else {
-        _device.io_write(req.iot_req.bar, req.iot_req.hwaddr,
-			 req.iot_req.size, req.iot_req.value, irqs_changed);
+    case VHOST_USER_GET_FEATURES:
+      {
+        auto res = new_vhost_response(sizeof(req.u64));
+        res->hdr.request = req.hdr.request;
+        res->u64 = _device.vhost_get_features();
+        return res;
       }
 
-      /* Notify qemu if it can fetch IRQ info. */
-      if (irqs_changed)
-	res.flags |= EXTERNALPCI_RES_FLAG_FETCH_IRQS;
+    // case EXTERNALPCI_REQ_PCI_INFO: {
 
-      break;
-    }
-    case EXTERNALPCI_REQ_IRQ:
-      _device.get_msix_info(req.irq_req.fd,    req.irq_req.idx,
-			    res.irq_res.valid, res.irq_res.more);
-      break;
-    case EXTERNALPCI_REQ_EXIT:
+    //   _device.get_device_info(res.pci_info.vendor_id,    res.pci_info.device_id,
+    //     		      res.pci_info.subsystem_id, res.pci_info.subsystem_vendor_id);
+
+    //   for (unsigned i = 0; i < 6; i++)
+    //     _device.get_bar_info(i, res.pci_info.bar[i].size);
+
+    //   _device.get_irq_info(res.pci_info.msix_vectors);
+
+    //   _device.get_hotspot(res.pci_info.hotspot_bar,
+    //     		  res.pci_info.hotspot_addr,
+    //     		  res.pci_info.hotspot_size,
+    //     		  res.pci_info.hotspot_fd);
+
+    //   break;
+    // }
+    // case EXTERNALPCI_REQ_REGION: {
+    //   // We need this hint, because otherwise are pretty certain to
+    //   // get virtual addresses for which we cannot create 1:1 DMA
+    //   // mappings. Don't worry about races here, mmap takes care of
+    //   // that.
+    //   static uintptr_t address_hint = (1ULL << 32);
+    //   Region r(req.region.phys_addr,
+    //            req.region.size,
+    //            reinterpret_cast<uint8_t *>(mmap((void *)address_hint, req.region.size,
+    //     					PROT_READ | PROT_WRITE,
+    //     					MAP_SHARED,
+    //     					req.region.fd,
+    //     					req.region.offset)));
+    //   close(req.region.fd);
+    //   if (r.mapping == MAP_FAILED) {
+    //     _sw.logf("mmap failed. Did you use -mem-path for qemu?");
+    //     return false;
+    //   }
+    //   address_hint += req.region.size;
+    //   return insert_region(r);
+    // }
+    // case EXTERNALPCI_REQ_RESET: {
+    //   _device.reset();
+    //   break;
+    // }
+    // case EXTERNALPCI_REQ_IOT: {
+    //   bool irqs_changed = false;
+
+    //   if (req.iot_req.type == externalpci_iot_req::IOT_READ)
+    //     res.iot_res.value = _device.io_read(req.iot_req.bar,
+    //     				    req.iot_req.hwaddr, req.iot_req.size);
+    //   else {
+    //     _device.io_write(req.iot_req.bar, req.iot_req.hwaddr,
+    //     		 req.iot_req.size, req.iot_req.value, irqs_changed);
+    //   }
+
+    //   /* Notify qemu if it can fetch IRQ info. */
+    //   if (irqs_changed)
+    //     res.flags |= EXTERNALPCI_RES_FLAG_FETCH_IRQS;
+
+    //   break;
+    // }
+    // case EXTERNALPCI_REQ_IRQ:
+    //   _device.get_msix_info(req.irq_req.fd,    req.irq_req.idx,
+    //     		    res.irq_res.valid, res.irq_res.more);
+    //   break;
+    // case EXTERNALPCI_REQ_EXIT:
     default:
       _sw.logf("Didn't understand message %u from client %d",
-	       req.type, _fd);
-      return false;
+	       req.hdr.request, _fd);
     }
 
-    return true;
+    return nullptr;
   }
 
 
   bool Session::poll()
   {
-    externalpci_req req;
-    externalpci_res resp;
+    vhost_request   req;
     struct msghdr   hdr;
-    struct iovec    iov = { &req, sizeof(req) };
+    struct iovec    iov = { &req, sizeof(req.hdr) };
     union {
       struct cmsghdr chdr;
-      char           chdr_data[CMSG_SPACE(sizeof(int))];
+      char           chdr_data[CMSG_SPACE(vhost_user_memory::max_regions * sizeof(int))];
     };
+
+    memset(&req,      0, sizeof(req));
+    memset(chdr_data, 0, sizeof(chdr_data));
 
     hdr.msg_name       = NULL;
     hdr.msg_namelen    = 0;
@@ -190,81 +210,52 @@ namespace Switch {
       char err[128];
       strerror_r(errno, err, sizeof(err));
       _sw.logf("Got error from connection to client %d: %s", _fd, err);
-      goto do_close;
+      return false;
     }
 
     // Is our connection closed?
     if (res == 0) {
       _sw.logf("Goodbye, client %u!", _fd);
-      goto do_close;
+      return false;
     }
-
-    if (res != sizeof(req)) {
-      _sw.logf("Client %3d violated protocol. %u %zu", _fd, res, sizeof(req));
-      goto do_close;
-    }
-
     {
       cmsghdr *incoming_chdr = CMSG_FIRSTHDR(&hdr);
       if (incoming_chdr) {
-	int incoming_fd;
-	memcpy(&incoming_fd, CMSG_DATA(&chdr), sizeof(int));
-
-	_file_descriptors.push_back(incoming_fd);
-
-	// _sw.logf("Received file descriptor %d from client %d.", incoming_fd, _fd);
-	if (req.type == EXTERNALPCI_REQ_REGION) {
-	  req.region.fd = incoming_fd;
-	} else if (req.type == EXTERNALPCI_REQ_IRQ) {
-	  req.irq_req.fd = incoming_fd;
-	} else {
-	  _sw.logf("... but we didn't expect a file descriptor!\n");
-	  goto do_close;
-	}
-      } else {
-	if (req.type == EXTERNALPCI_REQ_REGION or
-	    req.type ==  EXTERNALPCI_REQ_IRQ) {
-	  _sw.logf("Expected file descriptor.");
-	  goto do_close;
-	}
-
+	int fds = (incoming_chdr->cmsg_len - sizeof(*incoming_chdr)) / sizeof(int);
+        for (unsigned i = 0; i < fds; i++) {
+          int fd;
+          memcpy(&fd, CMSG_DATA(&chdr) + i * sizeof(int), sizeof(int));
+          _sw.logf("Client %d sent file descriptor %d.", _fd, fd);
+          _file_descriptors.push_back(fd);
+        }
       }
     }
 
-    if (not handle_request(req, resp))
-      goto do_close;
+    if (req.hdr.size + sizeof(req.hdr) > sizeof(req))
+      return false;
 
-    // Prepare sending response
-    hdr.msg_name       = NULL;
-    hdr.msg_namelen    = 0;
-    iov.iov_base       = &resp;
-    iov.iov_len        = sizeof(resp);
-    hdr.msg_control    = NULL;
-    hdr.msg_controllen = 0;
-
-    if (resp.type == EXTERNALPCI_REQ_PCI_INFO) {
-      // Pass file descriptor
-      hdr.msg_control    = &chdr;
-      hdr.msg_controllen = CMSG_LEN(sizeof(int));
-      chdr.cmsg_len     = CMSG_LEN(sizeof(int));
-      chdr.cmsg_level   = SOL_SOCKET;
-      chdr.cmsg_type    = SCM_RIGHTS;
-
-      memcpy(CMSG_DATA(&chdr), &resp.pci_info.hotspot_fd, sizeof(int));
-      _sw.logf("Transmitting fd %d to client %d.", resp.pci_info.hotspot_fd, _fd);
+    // Read payload.
+    if (req.hdr.size) {
+      res = recv(_fd, (char *)&req + sizeof(req.hdr), req.hdr.size, MSG_NOSIGNAL);
+      if (res != req.hdr.size) {
+        _sw.logf("Read %d bytes, but expected %" PRIu32 " from client %d.",
+                 res, req.hdr.size, _fd);
+        return false;
+      }
     }
 
-    res  = sendmsg(_fd, &hdr, MSG_EOR | MSG_NOSIGNAL);
-    if (res != sizeof(resp)) {
-      char err[128];
-      strerror_r(errno, err, sizeof(err));
-      _sw.logf("Error sending response to client %d: %s", _fd, err);
-      goto do_close;
+    auto resp = handle_request(req, (int *)(CMSG_DATA(&chdr)));
+    if (resp) {
+      res  = send(_fd, resp.get(), sizeof(resp->hdr) + resp->hdr.size, MSG_EOR | MSG_NOSIGNAL);
+      if (res != sizeof(resp->hdr) + resp->hdr.size) {
+        char err[128];
+        strerror_r(errno, err, sizeof(err));
+        _sw.logf("Error sending response to client %d: %s", _fd, err);
+        return false;
+      }
     }
 
     return true;
-  do_close:
-    return false;             // Remove!
   }
 
   void Listener::thread_fun()
@@ -302,7 +293,7 @@ namespace Switch {
 	Session *session = *s;
 	if (FD_ISSET(session->_fd, &fdset))
 	  if (not session->poll()) {
-	    // XXX Use unique_ptr
+	    // XXX Use shared_ptr
 
 	    s = _sessions.erase(s);
 	    delete session;
@@ -316,7 +307,7 @@ namespace Switch {
 
   Listener::Listener(Switch &sw, bool force) : _sw(sw)
   {
-    _sfd = socket(AF_LOCAL, SOCK_SEQPACKET, 0);
+    _sfd = socket(AF_LOCAL, SOCK_STREAM, 0);
     if (_sfd < 0) throw std::system_error(errno, std::system_category());
 
     _local_addr.sun_family = AF_LOCAL;

@@ -16,16 +16,16 @@
 
 #include <cstdint>
 #include <algorithm>
+#include <memory>
 
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/mman.h>
 
-// From QEMU source
-#include <hw/misc/externalpci.h>
-
 #include <virtiodevice.hh>
+
+struct vhost_request;
 
 namespace Switch {
 
@@ -103,8 +103,11 @@ namespace Switch {
     /// Insert a region into the region list.
     bool insert_region(Region const &r);
 
-    bool handle_request(externalpci_req const &req,
-			externalpci_res &res);
+
+    /// Handle a request and return a response, if one is needed. We
+    /// need to pass references/pointers, because the structure has
+    /// variable length.
+    std::unique_ptr<vhost_request> handle_request(vhost_request const &req, int *fd);
 
     void close_fd(int fd)
     {

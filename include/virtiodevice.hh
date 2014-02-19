@@ -17,13 +17,13 @@
 #include <atomic>
 #include <string>
 
-#include <externaldevice.hh>
 #include <switch.hh>
 #include <virtio-constants.hh>
 
 namespace Switch {
 
   struct Region;
+  class  Session;
 
   enum {
     INVALID_DESC_ID = ~0U,
@@ -81,14 +81,15 @@ namespace Switch {
   };
 
 
-  class VirtioDevice final : public ExternalDevice,
-			     public Port
+  class VirtioDevice final : public Port
   {
     enum {
       MSIX_VECTORS = 3,
       VIRT_QUEUES  = 3,
       QUEUE_ELEMENTS = 1024,
     };
+
+    Session &_session;
 
     int _irq_fd[MSIX_VECTORS];
 
@@ -97,7 +98,6 @@ namespace Switch {
 
     uint8_t              status;
     std::atomic<uint8_t> isr;
-    uint16_t             queue_sel;
     uint16_t             config_vector;
 
     uint32_t             guest_features;
@@ -141,42 +141,8 @@ namespace Switch {
 
   public:
 
-    // ExternalDevice methods
-
-    virtual void get_device_info(uint16_t &vendor_id,    uint16_t &device_id,
-				 uint16_t &subsystem_id, uint16_t &subsystem_vendor_id)
-      override;
-
-    virtual void get_bar_info   (uint8_t   bar_no, uint32_t &size)
-      override;
-
-    virtual void get_irq_info   (uint8_t &msix_vectors)
-      override;
-
-    virtual void get_hotspot    (uint8_t  &bar_no,
-				 uint16_t &addr,
-				 uint8_t  &size,
-				 int      &fd)
-      override;
-
-    virtual void get_msix_info  (int fd, int index,
-				 bool &valid, bool &more)
-      override;
-
-
-    virtual uint64_t io_read (unsigned bar_no,
-			      uint64_t addr,
-			      unsigned size)
-      override;
-
-    virtual void io_write(unsigned bar_no,
-			  uint64_t addr,
-			  unsigned size,
-			  uint64_t val,
-			  bool &irqs_changed)
-      override;
-
-    virtual void reset() override;
+    // vhost-user interface
+    uint32_t vhost_get_features() { return host_features; };
 
     // Port methods
 

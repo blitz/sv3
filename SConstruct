@@ -14,7 +14,6 @@ cpu=CPU       Optimize for the given CPU. Passed to -march.
 lto=0/1       Enable link-time optimization. Default is 0.
 asserts=1/0   Enable assertions at runtime. Default is 1.
 tracing=1/0   Enable tracing at runtime. Default is 0.
-qemusrc=dir   Source directory of patched qemu. Default is ../qemu.
 release=0/1   Forces lto=1,asserts=0,debug=0.
 """)
 
@@ -104,8 +103,9 @@ if not conf.CheckType('struct virtio_net_hdr', '#include <pci/types.h>\n#include
     conf.env.Append(CPPPATH = ["#linux-headers/include"])
     print("Linux headers installed. Let's hope this works.")
 
-# We have to use gnu++11 here to make old versions of userspace-rcu happy.
-if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=gnu++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
+# We would have to use gnu++11 here to make old versions of
+# userspace-rcu happy, but we don't care. Take this, debian stable...
+if not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++11') and not conf.AddOptionalFlag('.cc', 'CXXFLAGS', '-std=c++0x'):
     print("Your compiler is too old.")
     Exit(1)
 
@@ -140,21 +140,6 @@ host_pcap_env = conf.Finish()
 
 ## Version info
 AlwaysBuild(Command('version.inc', ['sv3.cc'], """git describe --dirty --always | sed 's/^\\(.*\\)$/"\\1"/' > $TARGET"""))
-
-## Qemu
-
-
-qemusrc = 'contrib/qemu'
-if not FindFile(qemusrc + "/include/hw/misc/externalpci", "."):
-    print("Could not find qemu. Cloning...")
-    if Execute([ "git submodule init",
-                     "git submodule update" ]):
-        print("Could not check out qemu. Execute 'git submodule init && git submodule update' manually.")
-        Exit(1)
-# host_env.Precious(qemusrc + "/README")
-# host_env.Command (qemusrc + "/README" , ['.gitmodules'],
-#         )
-host_env.Append(CPPPATH = [ qemusrc + "/include"])
 
 ## Switch library
 

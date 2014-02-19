@@ -26,8 +26,6 @@
 #include <switch.hh>
 #include <session.hh>
 
-#include <hw/misc/externalpci.h>
-
 namespace Switch {
 
   class Listener {
