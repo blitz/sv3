@@ -97,11 +97,12 @@ namespace Switch {
   }
 
   std::unique_ptr<vhost_request> Session::handle_request(vhost_request const &req,
-                                                         int *fds)
+                                                         int *fd)
   {
     switch (req.hdr.request) {
     case VHOST_USER_SET_OWNER:
       _sw.logf("VHOST_USER_SET_OWNER");
+      // XXX Do reset?
       break;
     case VHOST_USER_GET_FEATURES:
       {
@@ -110,45 +111,44 @@ namespace Switch {
         res->u64 = _device.vhost_get_features();
         return res;
       }
+    case VHOST_USER_SET_FEATURES:
+      _sw.logf("VHOST_USER_SET_FEATURES %" PRIx64, req.u64);
+      break;
+    case VHOST_USER_SET_MEM_TABLE:
+      _sw.logf("VHOST_USER_SET_MEM_TABLE %u regions", req.memory.num_regions);
+      if (req.memory.num_regions > vhost_user_memory::max_regions)
+        throw ProtocolViolated();
 
-    // case EXTERNALPCI_REQ_PCI_INFO: {
+      for (unsigned r = 0; r < req.memory.num_regions; r++) {
+        // We need this hint, because otherwise are pretty certain to
+        // get virtual addresses for which we cannot create 1:1 DMA
+        // mappings. Don't worry about races here, mmap takes care of
+        // that.
+        static uintptr_t address_hint = (1ULL << 32);
+        auto &in_region = req.memory.region[r];
 
-    //   _device.get_device_info(res.pci_info.vendor_id,    res.pci_info.device_id,
-    //     		      res.pci_info.subsystem_id, res.pci_info.subsystem_vendor_id);
+        // Not sure what the difference here is or whether it makes
+        // sense for vhost-user at all.
+        if ((in_region.guest_addr != in_region.user_addr) or
+            (fd[r] == 0))
+          throw ProtocolViolated();
 
-    //   for (unsigned i = 0; i < 6; i++)
-    //     _device.get_bar_info(i, res.pci_info.bar[i].size);
+        Region region(in_region.guest_addr, in_region.size,
+                      reinterpret_cast<uint8_t *>(mmap((void *)address_hint, in_region.size,
+                                                       PROT_READ | PROT_WRITE,
+                                                       MAP_SHARED,
+                                                       fd[r], 0)));
+        if (region.mapping == MAP_FAILED) {
+          _sw.logf("mmap failed. Did you use -mem-path for qemu?");
+          throw ProtocolViolated();
+        }
 
-    //   _device.get_irq_info(res.pci_info.msix_vectors);
+        address_hint += in_region.size;
+        if (not insert_region(region))
+          throw ProtocolViolated();
+      }
+      break;
 
-    //   _device.get_hotspot(res.pci_info.hotspot_bar,
-    //     		  res.pci_info.hotspot_addr,
-    //     		  res.pci_info.hotspot_size,
-    //     		  res.pci_info.hotspot_fd);
-
-    //   break;
-    // }
-    // case EXTERNALPCI_REQ_REGION: {
-    //   // We need this hint, because otherwise are pretty certain to
-    //   // get virtual addresses for which we cannot create 1:1 DMA
-    //   // mappings. Don't worry about races here, mmap takes care of
-    //   // that.
-    //   static uintptr_t address_hint = (1ULL << 32);
-    //   Region r(req.region.phys_addr,
-    //            req.region.size,
-    //            reinterpret_cast<uint8_t *>(mmap((void *)address_hint, req.region.size,
-    //     					PROT_READ | PROT_WRITE,
-    //     					MAP_SHARED,
-    //     					req.region.fd,
-    //     					req.region.offset)));
-    //   close(req.region.fd);
-    //   if (r.mapping == MAP_FAILED) {
-    //     _sw.logf("mmap failed. Did you use -mem-path for qemu?");
-    //     return false;
-    //   }
-    //   address_hint += req.region.size;
-    //   return insert_region(r);
-    // }
     // case EXTERNALPCI_REQ_RESET: {
     //   _device.reset();
     //   break;
@@ -158,10 +158,10 @@ namespace Switch {
 
     //   if (req.iot_req.type == externalpci_iot_req::IOT_READ)
     //     res.iot_res.value = _device.io_read(req.iot_req.bar,
-    //     				    req.iot_req.hwaddr, req.iot_req.size);
+    //                                      req.iot_req.hwaddr, req.iot_req.size);
     //   else {
     //     _device.io_write(req.iot_req.bar, req.iot_req.hwaddr,
-    //     		 req.iot_req.size, req.iot_req.value, irqs_changed);
+    //                   req.iot_req.size, req.iot_req.value, irqs_changed);
     //   }
 
     //   /* Notify qemu if it can fetch IRQ info. */
@@ -172,12 +172,13 @@ namespace Switch {
     // }
     // case EXTERNALPCI_REQ_IRQ:
     //   _device.get_msix_info(req.irq_req.fd,    req.irq_req.idx,
-    //     		    res.irq_res.valid, res.irq_res.more);
+    //                      res.irq_res.valid, res.irq_res.more);
     //   break;
     // case EXTERNALPCI_REQ_EXIT:
     default:
       _sw.logf("Didn't understand message %u from client %d",
-	       req.hdr.request, _fd);
+               req.hdr.request, _fd);
+      throw ProtocolViolated();
     }
 
     return nullptr;
@@ -186,73 +187,78 @@ namespace Switch {
 
   bool Session::poll()
   {
-    vhost_request   req;
-    struct msghdr   hdr;
-    struct iovec    iov = { &req, sizeof(req.hdr) };
-    union {
-      struct cmsghdr chdr;
-      char           chdr_data[CMSG_SPACE(vhost_user_memory::max_regions * sizeof(int))];
-    };
+    try {
+      vhost_request   req;
+      struct msghdr   hdr;
+      struct iovec    iov = { &req, sizeof(req.hdr) };
+      union {
+        struct cmsghdr chdr;
+        char           chdr_data[CMSG_SPACE(vhost_user_memory::max_regions * sizeof(int))];
+      };
 
-    memset(&req,      0, sizeof(req));
-    memset(chdr_data, 0, sizeof(chdr_data));
+      memset(&req,      0, sizeof(req));
+      memset(chdr_data, 0, sizeof(chdr_data));
 
-    hdr.msg_name       = NULL;
-    hdr.msg_namelen    = 0;
-    hdr.msg_iov        = &iov;
-    hdr.msg_iovlen     = 1;
-    hdr.msg_flags      = 0;
-    hdr.msg_control    = &chdr;
-    hdr.msg_controllen = CMSG_SPACE(sizeof(int));
+      hdr.msg_name       = NULL;
+      hdr.msg_namelen    = 0;
+      hdr.msg_iov        = &iov;
+      hdr.msg_iovlen     = 1;
+      hdr.msg_flags      = 0;
+      hdr.msg_control    = &chdr;
+      hdr.msg_controllen = CMSG_SPACE(sizeof(int));
 
-    int res = recvmsg(_fd, &hdr, 0);
-    if (res < 0) {
-      char err[128];
-      strerror_r(errno, err, sizeof(err));
-      _sw.logf("Got error from connection to client %d: %s", _fd, err);
-      return false;
-    }
-
-    // Is our connection closed?
-    if (res == 0) {
-      _sw.logf("Goodbye, client %u!", _fd);
-      return false;
-    }
-    {
-      cmsghdr *incoming_chdr = CMSG_FIRSTHDR(&hdr);
-      if (incoming_chdr) {
-	int fds = (incoming_chdr->cmsg_len - sizeof(*incoming_chdr)) / sizeof(int);
-        for (unsigned i = 0; i < fds; i++) {
-          int fd;
-          memcpy(&fd, CMSG_DATA(&chdr) + i * sizeof(int), sizeof(int));
-          _sw.logf("Client %d sent file descriptor %d.", _fd, fd);
-          _file_descriptors.push_back(fd);
-        }
-      }
-    }
-
-    if (req.hdr.size + sizeof(req.hdr) > sizeof(req))
-      return false;
-
-    // Read payload.
-    if (req.hdr.size) {
-      res = recv(_fd, (char *)&req + sizeof(req.hdr), req.hdr.size, MSG_NOSIGNAL);
-      if (res != req.hdr.size) {
-        _sw.logf("Read %d bytes, but expected %" PRIu32 " from client %d.",
-                 res, req.hdr.size, _fd);
-        return false;
-      }
-    }
-
-    auto resp = handle_request(req, (int *)(CMSG_DATA(&chdr)));
-    if (resp) {
-      res  = send(_fd, resp.get(), sizeof(resp->hdr) + resp->hdr.size, MSG_EOR | MSG_NOSIGNAL);
-      if (res != sizeof(resp->hdr) + resp->hdr.size) {
+      int res = recvmsg(_fd, &hdr, 0);
+      if (res < 0) {
         char err[128];
         strerror_r(errno, err, sizeof(err));
-        _sw.logf("Error sending response to client %d: %s", _fd, err);
+        _sw.logf("Got error from connection to client %d: %s", _fd, err);
+        throw ProtocolViolated();
+      }
+
+      // Is our connection closed?
+      if (res == 0) {
+        _sw.logf("Goodbye, client %u!", _fd);
         return false;
       }
+      {
+        cmsghdr *incoming_chdr = CMSG_FIRSTHDR(&hdr);
+        if (incoming_chdr) {
+          int fds = (incoming_chdr->cmsg_len - sizeof(*incoming_chdr)) / sizeof(int);
+          for (int i = 0; i < fds; i++) {
+            int fd;
+            memcpy(&fd, CMSG_DATA(&chdr) + i * sizeof(int), sizeof(int));
+            _sw.logf("Client %d sent file descriptor %d.", _fd, fd);
+            _file_descriptors.push_back(fd);
+          }
+        }
+      }
+
+      if (req.hdr.size + sizeof(req.hdr) > sizeof(req))
+        throw ProtocolViolated();
+
+      // Read payload.
+      if (req.hdr.size) {
+        res = recv(_fd, (char *)&req + sizeof(req.hdr), req.hdr.size, MSG_NOSIGNAL);
+        if (size_t(res) != req.hdr.size) {
+          _sw.logf("Read %d bytes, but expected %" PRIu32 " from client %d.",
+                   res, req.hdr.size, _fd);
+          throw ProtocolViolated();
+        }
+      }
+
+      auto resp = handle_request(req, (int *)(CMSG_DATA(&chdr)));
+      if (resp) {
+        res  = send(_fd, resp.get(), sizeof(resp->hdr) + resp->hdr.size, MSG_EOR | MSG_NOSIGNAL);
+        if (size_t(res) != sizeof(resp->hdr) + resp->hdr.size) {
+          char err[128];
+          strerror_r(errno, err, sizeof(err));
+          _sw.logf("Error sending response to client %d: %s", _fd, err);
+          throw ProtocolViolated();
+        }
+      }
+    } catch (ProtocolViolated) {
+      _sw.logf("Client %d violated protocol.", _fd);
+      return false;
     }
 
     return true;
@@ -268,8 +274,8 @@ namespace Switch {
       FD_ZERO(&fdset);
       FD_SET(_sfd, &fdset); if (_sfd >= nfds) nfds = _sfd + 1;
       for (auto &s : _sessions) {
-	FD_SET(s->_fd, &fdset);
-	if (s->_fd >= nfds) nfds = s->_fd + 1;
+        FD_SET(s->_fd, &fdset);
+        if (s->_fd >= nfds) nfds = s->_fd + 1;
       }
 
       struct timeval to;
@@ -279,25 +285,25 @@ namespace Switch {
       int res = select(nfds, &fdset, NULL, NULL, &to);
       rcu_thread_online();
       if (res < 0) {
-	// When our destructor closes _sfd, select() will exit with an
-	// error and we exit the thread.
+        // When our destructor closes _sfd, select() will exit with an
+        // error and we exit the thread.
 
-	// XXX Delete all sessions.
+        // XXX Delete all sessions.
 
-	return;
+        return;
       }
 
       if (FD_ISSET(_sfd, &fdset)) accept_session();
 
       for (auto s = _sessions.begin(); s != _sessions.end(); ++s) {
-	Session *session = *s;
-	if (FD_ISSET(session->_fd, &fdset))
-	  if (not session->poll()) {
-	    // XXX Use shared_ptr
-
-	    s = _sessions.erase(s);
-	    delete session;
-	  }
+        Session *session = *s;
+        if (FD_ISSET(session->_fd, &fdset))
+          if (not session->poll()) {
+            // XXX Use shared_ptr
+            _sw.logf("Removing client %d.", (*s)->_fd);
+            s = _sessions.erase(s);
+            delete session;
+          }
       }
 
     } while (true);

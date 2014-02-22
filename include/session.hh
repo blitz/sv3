@@ -69,6 +69,9 @@ namespace Switch {
     }
   };
 
+  /// Error class. Thrown when vhost-user protocol is violated.
+  class ProtocolViolated {};
+
   class Session {
     // XXX Write proper accessors.
   public:
