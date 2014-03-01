@@ -59,8 +59,7 @@ namespace Switch {
 
   struct VRing
   {
-    // num is always equal QUEUE_ELEMENTS
-    // unsigned int num;
+    unsigned int num;
 
     VRingDesc  *desc;
     VRingAvail *avail;
@@ -86,7 +85,6 @@ namespace Switch {
     enum {
       MSIX_VECTORS = 3,
       VIRT_QUEUES  = 3,
-      QUEUE_ELEMENTS = 1024,
     };
 
     Session &_session;
@@ -109,10 +107,9 @@ namespace Switch {
     VirtQueue &tx_vq()   { return vq[1]; }
     VirtQueue &ctrl_vq() { return vq[2]; }
 
-    void     vq_set_addr (VirtQueue &vq,   uint64_t addr);
     int      vq_num_heads(VirtQueue &vq,   unsigned idx);
     unsigned vq_get_head (VirtQueue &vq,   unsigned idx);
-    unsigned vq_next_desc(VRingDesc *desc);
+    unsigned vq_next_desc(VirtQueue &vq,   VRingDesc *desc);
 
     /// Pop a set of descriptors. If last_desc is set, it will be set
     /// to the last descriptor in the chain that was popped. If
@@ -143,6 +140,11 @@ namespace Switch {
 
     // vhost-user interface
     uint32_t vhost_get_features() { return host_features; };
+    void     vhost_set_vring_num (unsigned idx,  uint32_t num);
+    void     vhost_set_vring_base(unsigned idx,  uint64_t num);
+    void     vhost_set_vring_addr(unsigned idx,  uint32_t flags,
+                                  uint64_t desc, uint64_t used,
+                                  uint64_t avail);
 
     // Port methods
 

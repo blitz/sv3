@@ -37,12 +37,12 @@ make
 ./sv3
 # Switch to another terminal
 export PATH=$PWD/contrib/qemu/x86_64-softmmu:$PATH
-qemu-system-x86_64 -mem-path /tmp -net none -device externalpci,socket=/tmp/sv3 additional-args...
-#+END_SRC
 
-  Adding =-mem-path /tmp= to qemu is important, because it will create files there that
-  serve as backing store for RAM.  */tmp should be a tmpfs!* If this is not the case,
-  guest RAM will be periodically written to disk.
+qemu-system-x86_64 -mem-path /dev/hugepages,prealloc=on,share=on \
+                   -chardev socket,id=chr0,path=/tmp/sv3 \
+                   -netdev type=vhost-user,id=net0,chardev=chr0 \
+                   -device virtio-net-pci,netdev=net0
+#+END_SRC
 
 ** Creating an Upstream Port
 

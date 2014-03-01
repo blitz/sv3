@@ -177,7 +177,7 @@ namespace Switch {
 
     /* Check if guest isn't doing very strange things with descriptor
        numbers. */
-    if (UNLIKELY(num_heads > QUEUE_ELEMENTS))
+    if (UNLIKELY(num_heads > vq.vring.num))
       throw PortBrokenException(*this, "avail->idx b0rken");
 
     return num_heads;
@@ -190,18 +190,18 @@ namespace Switch {
 
     /* Grab the next descriptor number they're advertising, and increment
      * the index we've seen. */
-    head = __atomic_load_n(&vq.vring.avail->ring[idx % QUEUE_ELEMENTS],
+    head = __atomic_load_n(&vq.vring.avail->ring[idx % vq.vring.num],
                            __ATOMIC_ACQUIRE);
 
     /* If their number is silly, that's a fatal mistake. */
-    if (UNLIKELY(head >= QUEUE_ELEMENTS))
+    if (UNLIKELY(head >= vq.vring.num))
       throw PortBrokenException(*this, "head b0rken");
 
     return head;
   }
 
   unsigned
-  VirtioDevice::vq_next_desc(VRingDesc *desc)
+  VirtioDevice::vq_next_desc(VirtQueue &vq, VRingDesc *desc)
   {
     unsigned int next;
 
@@ -211,7 +211,7 @@ namespace Switch {
 
     /* Check they're not leading us off end of descriptors. */
     next = __atomic_load_n(&desc->next, __ATOMIC_ACQUIRE);
-    if (UNLIKELY(next >= QUEUE_ELEMENTS))
+    if (UNLIKELY(next >= vq.vring.num))
       throw PortBrokenException(*this, "next beyond bounds");
 
     return next;
@@ -234,7 +234,7 @@ namespace Switch {
       // We need to load this only once. Otherwise, the guest may
       // fool pointer validation.
       uint32_t flen = __atomic_load_n(&desc[i].len, __ATOMIC_RELAXED);
-      uint8_t *data = _session.translate_ptr(desc[i].addr, flen);
+      uint8_t *data = _session.translate_guest_ptr(desc[i].addr, flen);
 
       // We either collect only writeable or readable buffers. Check
       // for fragment list overflow and pointer translation failures
@@ -248,7 +248,7 @@ namespace Switch {
       if (closure(data, flen))
         break;
 
-    } while ((i = vq_next_desc(&desc[i])) != INVALID_DESC_ID);
+    } while ((i = vq_next_desc(vq, &desc[i])) != INVALID_DESC_ID);
 
     vq.inuse++;
     return head;
@@ -286,7 +286,7 @@ namespace Switch {
   VirtioDevice::vq_fill(VirtQueue &vq, unsigned head,
                         uint32_t len, unsigned idx)
   {
-    idx = (idx + vq.vring.used->idx) % QUEUE_ELEMENTS;
+    idx = (idx + vq.vring.used->idx) % vq.vring.num;
 
     /* Get a pointer to the next entry in the used ring. */
     VRingUsedElem &el = vq.vring.used->ring[idx];
@@ -361,37 +361,61 @@ namespace Switch {
                       __ATOMIC_RELEASE);
   }
 
-
-  static inline void *
-  vnet_vring_align(void *addr,
-                   unsigned long align)
+  void
+  VirtioDevice::vhost_set_vring_num(unsigned idx, uint32_t num)
   {
-    return (void *)(((uintptr_t)addr + align - 1) & ~(align - 1));
+    logf("%s(%u, %" PRIx32 ")", __func__, idx, num);
+
+    if (idx >= VIRT_QUEUES) {
+      logf("%s: no such vqueue: %u", __func__, idx);
+      throw ProtocolViolated();
+    }
+
+    vq[idx].vring.num = num;
   }
-
-
 
   void
-  VirtioDevice::vq_set_addr(VirtQueue &vq, uint64_t addr)
+  VirtioDevice::vhost_set_vring_base(unsigned idx, uint64_t num)
   {
-    vq.pa = addr;
+    logf("%s(%u, %" PRIx64 ")", __func__, idx, num);
+    if (idx >= VIRT_QUEUES) {
+      logf("%s: no such vqueue: %u", __func__, idx);
+      throw ProtocolViolated();
+    }
 
-    // XXX Use correct size here.
-    char *va = _session.translate_ptr<char>(vq.pa);
-    if (va != nullptr) {
-      vq.vring.desc  = reinterpret_cast<VRingDesc *>(va);
-      vq.vring.avail = reinterpret_cast<VRingAvail *>(va + QUEUE_ELEMENTS * sizeof(VRingDesc));
-      vq.vring.used  = reinterpret_cast<VRingUsed *>(vnet_vring_align(reinterpret_cast<char *>(vq.vring.avail) +
-                                                                       offsetof(VRingAvail, ring[QUEUE_ELEMENTS]),
-                                                                       VIRTIO_PCI_VRING_ALIGN));
-    } else {
-      vq.vring.desc  = nullptr;
-      vq.vring.avail = nullptr;
-      vq.vring.used  = nullptr;
+    vq[idx].last_avail_idx = num;
+  }
 
-      logf("Cannot translate address %016" PRIx64 ".", vq.pa);
+  void
+  VirtioDevice::vhost_set_vring_addr(unsigned idx,  uint32_t flags,
+                                     uint64_t desc, uint64_t used,
+                                     uint64_t avail)
+  {
+    if (idx >= VIRT_QUEUES) {
+      logf("%s: no such vqueue: %u", __func__, idx);
+      throw ProtocolViolated();
+    }
+
+    auto &vr = vq[idx].vring;
+    
+    vr.desc  = _session.translate_user_ptr<VRingDesc>(desc);
+    vr.used  = _session.translate_user_ptr<VRingUsed>(used);
+    vr.avail = _session.translate_user_ptr<VRingAvail>(avail);
+
+    logf("vring %u desc  %" PRIx64 " -> %p", idx, desc,  vr.desc);
+    logf("vring %u used  %" PRIx64 " -> %p", idx, used,  vr.used);
+    logf("vring %u avail %" PRIx64 " -> %p", idx, avail, vr.avail);
+
+
+    // Check whether we got a nullptr
+    if (not (vr.desc and vr.used and vr.avail)) {
+      logf("%s: Couldn't translate pointer. Bad!", __func__);
+      throw ProtocolViolated();
     }
   }
+
+
+
 }
 
 // EOF

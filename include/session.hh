@@ -85,7 +85,13 @@ namespace Switch {
     /// Client socket address.
     sockaddr_un  _sa;
 
+    /// Used to translate guest virtual addresses to local addresses
+    /// in this process.
     RegionList   _regions;
+
+    // Used to translate virtual addresses in Qemu to local addresses
+    // in this process.
+    RegionList   _user_regions;
 
     /// File descriptors we accepted that must be cleaned up on session
     /// termination.
@@ -94,18 +100,22 @@ namespace Switch {
     VirtioDevice      _device;
 
     template<typename P>
-    P       *translate_ptr(uint64_t addr)
+    P       *translate_guest_ptr(uint64_t addr)
     { return _regions.translate_ptr<P>(addr); }
 
-    uint8_t *translate_ptr(uint64_t addr, size_t size)
+    template<typename P>
+    P       *translate_user_ptr(uint64_t addr)
+    { return _user_regions.translate_ptr<P>(addr); }
+
+    uint8_t *translate_guest_ptr(uint64_t addr, size_t size)
     { return _regions.translate_ptr(addr, size); }
 
     /// Check for a message. Shouldn't block.
     bool poll();
 
     /// Insert a region into the region list.
-    bool insert_region(Region const &r);
-
+    bool insert_guest_region(Region const &r);
+    bool insert_user_region (Region const &r);
 
     /// Handle a request and return a response, if one is needed. We
     /// need to pass references/pointers, because the structure has

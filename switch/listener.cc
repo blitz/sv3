@@ -77,14 +77,21 @@ namespace Switch {
     return true;
   }
 
-  bool Session::insert_region(Region const &r)
+  bool Session::insert_guest_region(Region const &r)
   {
-    _sw.logf("Inserting region %016" PRIx64 "+%08" PRIx64 " at %p.",
-	     r.addr, r.size, r.mapping);
+    _sw.logf("Inserting guest region %016" PRIx64 "+%08" PRIx64 " at %p.",
+             r.addr, r.size, r.mapping);
     bool s =  _regions.insert(r);
     if (s) _sw.announce_dma_memory(_device, r.mapping, r.size);
 
     return s;
+  }
+
+  bool Session::insert_user_region(Region const &r)
+  {
+    _sw.logf("Inserting user  region %016" PRIx64 "+%08" PRIx64 " at %p.",
+             r.addr, r.size, r.mapping);
+    return _user_regions.insert(r);
   }
 
   static std::unique_ptr<vhost_request> new_vhost_response(size_t payload)
@@ -92,7 +99,7 @@ namespace Switch {
     void *mem = new char[sizeof(vhost_request) + payload];
     auto r    = std::unique_ptr<vhost_request>(new (mem) vhost_request);
     r->hdr.size  = payload;
-    r->hdr.flags = 1;
+    r->hdr.flags = vhost_request::current_version | (1 << 2 /* is a reply */);
     return r;
   }
 
@@ -116,8 +123,10 @@ namespace Switch {
       break;
     case VHOST_USER_SET_MEM_TABLE:
       _sw.logf("VHOST_USER_SET_MEM_TABLE %u regions", req.memory.num_regions);
-      if (req.memory.num_regions > vhost_user_memory::max_regions)
+      if (req.memory.num_regions > vhost_user_memory::max_regions) {
+        _sw.logf("Too many regions: %u\n", req.memory.num_regions);
         throw ProtocolViolated();
+      }
 
       for (unsigned r = 0; r < req.memory.num_regions; r++) {
         // We need this hint, because otherwise are pretty certain to
@@ -127,11 +136,10 @@ namespace Switch {
         static uintptr_t address_hint = (1ULL << 32);
         auto &in_region = req.memory.region[r];
 
-        // Not sure what the difference here is or whether it makes
-        // sense for vhost-user at all.
-        if ((in_region.guest_addr != in_region.user_addr) or
-            (fd[r] == 0))
-          throw ProtocolViolated();
+        if (fd[r] == 0) {
+          _sw.logf("Skipping region %u.", r);
+          continue;
+        }
 
         Region region(in_region.guest_addr, in_region.size,
                       reinterpret_cast<uint8_t *>(mmap((void *)address_hint, in_region.size,
@@ -144,37 +152,44 @@ namespace Switch {
         }
 
         address_hint += in_region.size;
-        if (not insert_region(region))
+
+        Region uregion(in_region.user_addr, in_region.size, region.mapping);
+        if (not insert_guest_region(region) or
+            not insert_user_region(uregion))
           throw ProtocolViolated();
       }
       break;
 
-    // case EXTERNALPCI_REQ_RESET: {
-    //   _device.reset();
-    //   break;
-    // }
-    // case EXTERNALPCI_REQ_IOT: {
-    //   bool irqs_changed = false;
-
-    //   if (req.iot_req.type == externalpci_iot_req::IOT_READ)
-    //     res.iot_res.value = _device.io_read(req.iot_req.bar,
-    //                                      req.iot_req.hwaddr, req.iot_req.size);
-    //   else {
-    //     _device.io_write(req.iot_req.bar, req.iot_req.hwaddr,
-    //                   req.iot_req.size, req.iot_req.value, irqs_changed);
-    //   }
-
-    //   /* Notify qemu if it can fetch IRQ info. */
-    //   if (irqs_changed)
-    //     res.flags |= EXTERNALPCI_RES_FLAG_FETCH_IRQS;
-
-    //   break;
-    // }
-    // case EXTERNALPCI_REQ_IRQ:
-    //   _device.get_msix_info(req.irq_req.fd,    req.irq_req.idx,
-    //                      res.irq_res.valid, res.irq_res.more);
-    //   break;
-    // case EXTERNALPCI_REQ_EXIT:
+    case VHOST_USER_SET_VRING_NUM:
+      _device.vhost_set_vring_num(req.state.index, req.state.num);
+      break;
+    case VHOST_USER_GET_VRING_BASE:
+      _sw.logf("VHOST_USER_GET_VRING_BASE XXX Implement index %" PRIx32,
+               req.state.index);
+      break;
+    case VHOST_USER_SET_VRING_BASE:
+      _device.vhost_set_vring_base(req.state.index, req.state.num);
+      break;
+    case VHOST_USER_SET_VRING_ADDR:
+      _device.vhost_set_vring_addr(req.addr.index, req.addr.flags,
+                                   req.addr.desc_user_addr,
+                                   req.addr.used_user_addr,
+                                   req.addr.avail_user_addr);
+      break;
+    case VHOST_USER_SET_LOG_BASE:
+      _sw.logf("VHOST_USER_SET_LOG_BASE: %" PRIx64, req.u64);
+      break;
+    case VHOST_USER_SET_LOG_FD:
+      _sw.logf("VHOST_USER_SET_LOG_FD");
+      break;
+    case VHOST_USER_SET_VRING_KICK:
+      _sw.logf("VHOST_USER_SET_VRING_KICK XXX Implement");
+      // XXX Complete
+      break;
+    case VHOST_USER_SET_VRING_CALL:
+      _sw.logf("VHOST_USER_SET_VRING_CALL XXX Implement");
+      // XXX Complete
+      break;
     default:
       _sw.logf("Didn't understand message %u from client %d",
                req.hdr.request, _fd);
