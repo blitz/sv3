@@ -1,4 +1,4 @@
 [submodule "qemu"]
 	path = contrib/qemu
-	url = git@github.com:virtualopensystems/qemu.git
+	url = git@github.com:blitz/qemu.git
 	branch = vhost-user-v8
